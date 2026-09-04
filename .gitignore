@@ -1,0 +1,8 @@
+/target
+
+# opencode tooling
+.opencode/
+
+# logs
+*.log
+run_err.log
