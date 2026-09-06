@@ -12,22 +12,34 @@ const BG: Color32 = Color32::from_rgb(12, 12, 12);
 
 struct TerminalInstance {
     master: Option<Box<dyn MasterPty + Send>>,
+    child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     parser: Arc<Mutex<vt100::Parser>>,
     rows: u16,
     cols: u16,
     spawned: bool,
+    error: Option<String>,
+}
+
+impl Drop for TerminalInstance {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+        }
+    }
 }
 
 impl Default for TerminalInstance {
     fn default() -> Self {
         Self {
             master: None,
+            child: None,
             writer: Arc::new(Mutex::new(Box::new(std::io::sink()))),
             parser: Arc::new(Mutex::new(vt100::Parser::new(24, 80, 4000))),
             rows: 24,
             cols: 80,
             spawned: false,
+            error: None,
         }
     }
 }
@@ -74,30 +86,52 @@ impl TerminalPanel {
             pixel_height: 0,
         }) {
             Ok(p) => p,
-            Err(_) => return,
+            Err(e) => {
+                s.error = Some(format!("failed to create PTY: {e}"));
+                return;
+            }
         };
 
-        let mut cmd = CommandBuilder::new("powershell");
+        // PowerShell 7 ships as pwsh; Windows PowerShell (5.1) as powershell.
+        // Prefer pwsh but fall back so stripped installs still get a shell.
+        let mut cmd = CommandBuilder::new("pwsh");
         cmd.arg("-NoProfile");
-
-        let child = match pair.slave.spawn_command(cmd) {
-            Ok(c) => c,
-            Err(_) => return,
+        let child = match pair
+            .slave
+            .spawn_command(cmd)
+            .or_else(|_| {
+                let mut fb = CommandBuilder::new("powershell");
+                fb.arg("-NoProfile");
+                pair.slave.spawn_command(fb)
+            })
+        {
+            Ok(c) => Some(c),
+            Err(e) => {
+                s.error = Some(format!("failed to start shell (pwsh/powershell): {e}"));
+                return;
+            }
         };
 
         let writer = match pair.master.take_writer() {
             Ok(w) => w,
-            Err(_) => return,
+            Err(e) => {
+                s.error = Some(format!("failed to take PTY writer: {e}"));
+                return;
+            }
         };
         let reader = match pair.master.try_clone_reader() {
             Ok(r) => r,
-            Err(_) => return,
+            Err(e) => {
+                s.error = Some(format!("failed to clone PTY reader: {e}"));
+                return;
+            }
         };
 
         s.master = Some(pair.master);
-        *s.writer.lock().unwrap() = writer;
+        s.child = child;
+        *s.writer.lock().unwrap_or_else(|e| e.into_inner()) = writer;
         s.spawned = true;
-        drop(child);
+        s.error = None;
 
         let parser = Arc::clone(&s.parser);
         let writer = Arc::clone(&s.writer);
@@ -132,10 +166,10 @@ impl TerminalPanel {
                             }
                         }
 
-                        let mut parser = parser.lock().unwrap();
-                        parser.process(&filtered);
-                        drop(parser);
-                        ctx.request_repaint();
+                    let mut parser = parser.lock().unwrap_or_else(|e| e.into_inner());
+                    parser.process(&filtered);
+                    drop(parser);
+                    ctx.request_repaint();
                     }
                     Err(_) => break,
                 }
@@ -265,14 +299,14 @@ impl TerminalPanel {
                 });
             }
             {
-                let mut parser = s.parser.lock().unwrap();
+                let mut parser = s.parser.lock().unwrap_or_else(|e| e.into_inner());
                 parser.screen_mut().set_size(s.rows, s.cols);
             }
         }
 
         // Snapshot the whole screen once (no repeated locking during paint).
         let screen = {
-            let parser = s.parser.lock().unwrap();
+            let parser = s.parser.lock().unwrap_or_else(|e| e.into_inner());
             parser.screen().clone()
         };
         let (cursor_row, cursor_col, screen_rows, screen_cols) = (
@@ -285,6 +319,17 @@ impl TerminalPanel {
         // Background.
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, BG);
+
+        if let Some(err) = &s.error {
+            painter.text(
+                rect.min + egui::vec2(8.0, 8.0),
+                Align2::LEFT_TOP,
+                err,
+                FontId::proportional(FONT_SIZE),
+                palette.text,
+            );
+            return;
+        }
 
         let start_col = rect.min.x;
         let start_row = rect.min.y;

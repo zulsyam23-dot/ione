@@ -11,6 +11,13 @@ pub struct Palette {
     pub text_muted: Color32,
     /// Editor background as a hex string (no '#') to override the CodeEditor theme.
     pub editor_bg: &'static str,
+    pub bracket_guide: Color32,
+    pub bracket_active: Color32,
+    pub bracket_rainbow: [Color32; 4],
+    /// Error squiggle / gutter marker.
+    pub diag_error: Color32,
+    /// Warning squiggle / gutter marker.
+    pub diag_warning: Color32,
 }
 
 impl Palette {
@@ -25,6 +32,16 @@ impl Palette {
             text: Color32::from_rgb(220, 220, 222),
             text_muted: Color32::from_rgb(140, 140, 145),
             editor_bg: "000000",
+            bracket_guide: Color32::from_rgba_unmultiplied(160, 165, 185, 70),
+            bracket_active: Color32::from_rgba_unmultiplied(90, 160, 255, 200),
+            bracket_rainbow: [
+                Color32::from_rgb(200, 160, 255),
+                Color32::from_rgb(90, 200, 240),
+                Color32::from_rgb(245, 170, 90),
+                Color32::from_rgb(130, 220, 130),
+            ],
+            diag_error: Color32::from_rgb(255, 84, 84),
+            diag_warning: Color32::from_rgb(255, 187, 68),
         }
     }
 
@@ -39,6 +56,16 @@ impl Palette {
             text: Color32::from_rgb(40, 42, 48),
             text_muted: Color32::from_rgb(112, 115, 124),
             editor_bg: "ffffff",
+            bracket_guide: Color32::from_rgba_unmultiplied(70, 75, 95, 80),
+            bracket_active: Color32::from_rgba_unmultiplied(56, 120, 255, 205),
+            bracket_rainbow: [
+                Color32::from_rgb(120, 70, 205),
+                Color32::from_rgb(30, 120, 190),
+                Color32::from_rgb(200, 130, 55),
+                Color32::from_rgb(60, 150, 85),
+            ],
+            diag_error: Color32::from_rgb(214, 42, 42),
+            diag_warning: Color32::from_rgb(186, 122, 34),
         }
     }
 }

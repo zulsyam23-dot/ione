@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icons/1770523897143.ico" alt="ione logo" width="96" height="96" />
+  <img src="assets/icons/app/1770523897143.ico" alt="ione logo" width="96" height="96" />
 </p>
 
 <h1 align="center">ione</h1>
@@ -37,10 +37,14 @@
 | **Terminal PowerShell** | Multi-session nyata (portable-pty), tab untuk tiap sesi |
 | **File Explorer** | Pohon folder, expand/collapse, menu konteks (Open/Rename/Delete/Copy Path) |
 | **Find & Replace** | Hasil live, ganti satu-satu atau ganti semua |
+| **Code Folding** | Lipat blok `{ … }` dengan `Ctrl+Shift+[` / `Ctrl+Shift+]` |
+| **Multi-select edit** | `Ctrl+D` pilih kejadian kata berikutnya, satu ketikan diedit ke semua sekaligus |
+| **Error/Warning decoration** | Squiggle `~~~~~` merah/kuning + tooltip + count di status bar |
+| **Bracket guides** | Panduan pasangan kurung + rainbow brackets (bisa dimatikan via View → Editor Guides) |
 | **Outline panel** | Navigasi struktur file aktif |
-| **Tema Dark/Light** | Hitam murni & putih, sudut tajam (tanpa radius) |
+| **Tema Dark/Light** | Hitam murni & putih, sudut tajam; GitHub Light masih **beta** (ada konfirmasi saat memilih) |
 | **Ganti font editor** | 5 font coding gratis: JetBrains Mono, Fira Code, dsb. |
-| **Splash screen** | Animasi saat aplikasi dibuka |
+| **Splash screen** | Animasi startup + overlay sesaat saat membuka file besar |
 | **About window** | Info lengkap, shortcut, tech stack |
 
 > 📖 Lihat **[FITUR.md](FITUR.md)** untuk penjelasan mendalam termasuk **kelebihan & kekurangan**.
@@ -49,11 +53,12 @@
 
 ## 🖼️ Tangkapan Layar
 
-*Belum tersedia — tambahkan tangkapan layar pada folder `docs/screenshots/` lalu ganti placeholder ini:*
-
-```markdown
-![Tampilan Utama](docs/screenshots/main.png)
-```
+<p align="center">
+  <img src="assets/screenshots/ione-main.png" alt="Tampilan editor ione" width="860" />
+</p>
+<p align="center">
+  <em>Tampilan editor ione — code editor multi-tab dengan file explorer & terminal PowerShell terintegrasi.</em>
+</p>
 
 ---
 
@@ -75,7 +80,7 @@ Dependensi utama (di `Cargo.toml`):
 | `portable-pty` | 0.8 | Terminal PTY PowerShell |
 | `vt100` | 0.16 | Parsing output terminal |
 | `rfd` | 0.15 | Dialog file/folder |
-| `serde` / `serde_json` | 1 | Serialisasi |
+| `opener` | 0.8 | Membuka hyperlink/system default |
 | `image` | 0.25 | Pemuatan GIF/ICO |
 
 ---
@@ -119,6 +124,8 @@ cargo run
 | Find & Replace | `Ctrl+H` |
 | Toggle File Explorer | `Ctrl+L` |
 | Toggle Terminal | `` Ctrl+` `` |
+| Pilih kejadian kata berikutnya | `Ctrl+D` |
+| Lipat / Buka blok | `Ctrl+Shift+[` / `Ctrl+Shift+]` |
 | Siklus Tab | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
 
 > **Terminal multi-session:** klik kiri = pindah sesi, klik tengah / klik kanan → Close = tutup sesi.
@@ -129,23 +136,41 @@ cargo run
 
 ```
 src/
-├── main.rs        # Entry point & setup window
-├── app.rs         # EditorApp utama, UI, perintah, About
-├── editor.rs      # Render editor kode
-├── tabs.rs        # Manajemen tab file
-├── file_tree.rs   # Explorer pohon folder
-├── outline.rs     # Panel outline
-├── search.rs      # Panel find & replace
-├── terminal.rs    # Terminal PowerShell multi-session
-├── menu.rs        # Menu bar & shortcut global
-├── fonts.rs       # Daftar & pemuatan font coding
-├── theme.rs       # Definisi tema (dark/light)
-├── style.rs       # Palet & gaya visual
-├── icons.rs       # Ikon file/SVG
-└── loading.rs     # Splash screen animasi
+├── main.rs         # Entry point & setup window
+├── app/            # EditorApp utama, panel, aksi, perintah
+│   ├── mod.rs
+│   ├── actions.rs  # Handler perintah
+│   ├── panels.rs   # Title bar, status bar, sidebar, About
+│   └── utils.rs
+├── editor/         # Render editor (widget + overlay)
+│   ├── mod.rs      # Editor widget & layouter
+│   ├── folds.rs    # Code folding (FoldView/FoldBuffer)
+│   ├── multi.rs    # Multi-select edit (Ctrl+D)
+│   ├── gutter.rs   # Nomor baris + ikon fold + marker diagnostik
+│   ├── styling.rs  # Pipeline pewarnaan sintaks
+│   ├── cursor.rs   # Matematika posisi teks
+│   └── links.rs    # Hyperlink klik
+├── diagnostics.rs  # Analisis error/warning + render squiggle
+├── guides/         # Bracket guides, rainbow brackets, geometri
+├── tabs.rs         # Manajemen tab file
+├── file_tree.rs    # Explorer pohon folder
+├── outline.rs      # Panel outline
+├── search.rs       # Panel find & replace
+├── terminal.rs     # Terminal PowerShell multi-session
+├── menu.rs         # Menu bar & shortcut global
+├── fonts.rs        # Daftar & pemuatan font coding
+├── theme.rs        # Definisi tema (dark/light)
+├── style.rs        # Palet & gaya visual
+├── icons.rs        # Ikon file/SVG
+└── loading.rs      # Splash screen animasi
 
 assets/
-├── icons/         # Logo & ikon aplikasi
+├── icons/
+│   ├── app/          # Logo aplikasi (.ico) & GIF splash
+│   ├── lang/         # Ikon bahasa pemrograman (lang-*.svg)
+│   ├── explorer/     # Ikon file/folder untuk panel file tree
+│   └── ui/           # Ikon umum UI (save, search, chevron, dll)
+├── screenshots/      # Tangkapan layar untuk README
 └── fonts/         # Font coding (OFL / Apache)
 ```
 
@@ -159,6 +184,7 @@ assets/
 - [ ] Recent files
 - [ ] Minimap & breadcrumb
 - [ ] Integrasi build/run → terminal
+- [ ] Diagnostik eksternal (`cargo check` / LSP) di samping cek bawaan
 
 ---
 

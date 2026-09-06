@@ -26,6 +26,10 @@ impl Theme {
     pub fn is_dark(self) -> bool {
         self.to_color_theme().is_dark()
     }
+
+    pub fn is_beta(self) -> bool {
+        matches!(self, Theme::GithubLight)
+    }
 }
 
 impl Default for Theme {

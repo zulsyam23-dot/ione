@@ -215,8 +215,19 @@ impl SearchPanel {
         if !root.is_dir() {
             return;
         }
-        let mut dirs = vec![root.clone()];
-        while let Some(dir) = dirs.pop() {
+        // Depth cap + canonicalized visited set: Windows junctions can cycle.
+        const MAX_SEARCH_DEPTH: usize = 32;
+        let mut visited = std::collections::HashSet::new();
+        let mut dirs = vec![(root.clone(), 0usize)];
+        while let Some((dir, depth)) = dirs.pop() {
+            if depth >= MAX_SEARCH_DEPTH {
+                continue;
+            }
+            if let Ok(canon) = std::fs::canonicalize(&dir) {
+                if !visited.insert(canon) {
+                    continue;
+                }
+            }
             let Ok(rd) = std::fs::read_dir(&dir) else {
                 continue;
             };
@@ -226,7 +237,7 @@ impl SearchPanel {
                     continue;
                 }
                 if p.is_dir() {
-                    dirs.push(p);
+                    dirs.push((p, depth + 1));
                 } else if let Ok(text) = std::fs::read_to_string(&p) {
                     let needle = if case {
                         query.to_string()

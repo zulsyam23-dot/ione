@@ -40,14 +40,16 @@ impl FileTree {
     }
 
     fn scan_dir(&mut self, dir: &Path, depth: usize) {
+        // Recursive (inline parent→children order in `entries`); depth-capped
+        // so a junction loop (Windows) can't recurse forever.
+        const MAX_SCAN_DEPTH: usize = 256;
+        if depth > MAX_SCAN_DEPTH {
+            return;
+        }
         let mut entries: Vec<_> = match std::fs::read_dir(dir) {
             Ok(rd) => rd
                 .filter_map(|e| e.ok())
-                .filter(|e| {
-                    !e.file_name()
-                        .to_string_lossy()
-                        .starts_with('.')
-                })
+                .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
                 .collect(),
             Err(_) => return,
         };
@@ -239,5 +241,34 @@ fn file_icon(name: &str) -> Icon {
         Some("c" | "h") => Icon::LangC,
         Some("lock") => Icon::LangConfig,
         _ => Icon::LangPlain,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expanded_children_stay_inline_under_their_folder() {
+        let dir = std::env::temp_dir().join(format!("ione_tree_test_{}", std::process::id()));
+        let sub = dir.join("a");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(dir.join("root.rs"), "").unwrap();
+        std::fs::write(sub.join("inner.rs"), "").unwrap();
+
+        let mut tree = FileTree::new();
+        tree.set_root(dir.clone());
+        tree.expanded.push(sub.clone());
+        tree.refresh();
+
+        let names: Vec<String> = tree.entries.iter().map(|e| e.name.clone()).collect();
+        let a = names.iter().position(|n| n == "a").expect("folder a listed");
+        let inner = names.iter().position(|n| n == "inner.rs").expect("child below a");
+        let root = names.iter().position(|n| n == "root.rs").expect("root file listed");
+        // The folder's children must appear immediately under the folder, before\
+        // the parent's other (unexpanded) files.
+        assert!(a < inner && inner < root, "order was {names:?}");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

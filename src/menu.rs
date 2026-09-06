@@ -2,8 +2,14 @@ use eframe::egui;
 
 use crate::app::AppCommand;
 use crate::fonts;
+use crate::guides::EditorOverlay;
 
-pub fn show_menu_bar(ui: &mut egui::Ui, commands: &mut Vec<AppCommand>, current_font: &str) {
+pub fn show_menu_bar(
+    ui: &mut egui::Ui,
+    commands: &mut Vec<AppCommand>,
+    current_font: &str,
+    overlay: &EditorOverlay,
+) {
     egui::menu::MenuBar::new().ui(ui, |ui| {
         egui::menu::MenuButton::new("File").ui(ui, |ui| {
             if ui
@@ -65,6 +71,21 @@ pub fn show_menu_bar(ui: &mut egui::Ui, commands: &mut Vec<AppCommand>, current_
                 commands.push(AppCommand::ToggleSearch);
                 ui.close();
             }
+            ui.separator();
+            if ui
+                .add(egui::Button::new("Fold Block").shortcut_text("Ctrl+Shift+["))
+                .clicked()
+            {
+                commands.push(AppCommand::Fold);
+                ui.close();
+            }
+            if ui
+                .add(egui::Button::new("Unfold Block").shortcut_text("Ctrl+Shift+]"))
+                .clicked()
+            {
+                commands.push(AppCommand::Unfold);
+                ui.close();
+            }
         });
 
         egui::menu::MenuButton::new("View").ui(ui, |ui| {
@@ -84,9 +105,30 @@ pub fn show_menu_bar(ui: &mut egui::Ui, commands: &mut Vec<AppCommand>, current_
                 ui.close();
             }
             ui.separator();
+            ui.menu_button("Editor Guides", |ui| {
+                if ui
+                    .button(checked("Bracket Pair Guides", overlay.bracket_guides))
+                    .clicked()
+                {
+                    commands.push(AppCommand::ToggleBracketGuides);
+                    ui.close();
+                }
+                if ui
+                    .button(checked("Rainbow Brackets", overlay.colorize_brackets))
+                    .clicked()
+                {
+                    commands.push(AppCommand::ToggleBracketColorize);
+                    ui.close();
+                }
+            });
             ui.menu_button("Theme", |ui| {
                 for theme in crate::theme::Theme::ALL {
-                    if ui.button(theme.name()).clicked() {
+                    let label = if theme.is_beta() {
+                        format!("{} (beta)", theme.name())
+                    } else {
+                        theme.name().to_string()
+                    };
+                    if ui.button(label).clicked() {
                         commands.push(AppCommand::SetTheme(*theme));
                         ui.close();
                     }
@@ -115,6 +157,14 @@ pub fn show_menu_bar(ui: &mut egui::Ui, commands: &mut Vec<AppCommand>, current_
             }
         });
     });
+}
+
+fn checked(label: &str, on: bool) -> String {
+    if on {
+        format!("✓ {label}")
+    } else {
+        label.to_string()
+    }
 }
 
 pub fn handle_shortcuts(ctx: &egui::Context, commands: &mut Vec<AppCommand>, ctrl_k_pending: &mut bool) {
@@ -158,6 +208,9 @@ pub fn handle_shortcuts(ctx: &egui::Context, commands: &mut Vec<AppCommand>, ctr
             if i.key_pressed(egui::Key::H) {
                 commands.push(AppCommand::ToggleSearch);
             }
+            if i.key_pressed(egui::Key::D) {
+                commands.push(AppCommand::MultiSelectNext);
+            }
             if i.key_pressed(egui::Key::L) {
                 commands.push(AppCommand::ToggleSidebar);
             }
@@ -165,6 +218,12 @@ pub fn handle_shortcuts(ctx: &egui::Context, commands: &mut Vec<AppCommand>, ctr
         if ctrl && i.modifiers.shift && !chord {
             if i.key_pressed(egui::Key::S) {
                 commands.push(AppCommand::SaveAs);
+            }
+            if i.key_pressed(egui::Key::OpenBracket) {
+                commands.push(AppCommand::Fold);
+            }
+            if i.key_pressed(egui::Key::CloseBracket) {
+                commands.push(AppCommand::Unfold);
             }
         }
         if ctrl && i.key_pressed(egui::Key::Tab) && !chord {
