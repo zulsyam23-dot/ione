@@ -261,6 +261,29 @@ impl EditorApp {
                 }
                 AppCommand::MultiSelectNext => {
                     if let Some(tab) = self.tabs.active_tab_mut() {
+                        // An active multi-select is always extended by its seed
+                        // word: the caret can't move away while it runs (any
+                        // click/arrow cancels it), so this survives batch edits.
+                        if let Some(m) = &tab.multi {
+                            let word = m.word.clone();
+                            let after = m.ranges.iter().map(|&(s, _)| s).max().unwrap_or(0);
+                            let sel = m.ranges.clone();
+                            if let Some(next) = crate::editor::multi::next_occurrence(
+                                &tab.content,
+                                &word,
+                                after,
+                                &sel,
+                            ) {
+                                if let Some(m) = &mut tab.multi {
+                                    m.ranges.push(next);
+                                    m.ranges.sort_by_key(|&(s, _)| s);
+                                    m.ranges.dedup();
+                                }
+                            }
+                            continue;
+                        }
+                        // Fresh seed: the occurrence under the caret — not the
+                        // file's first occurrence.
                         let byte_pos = tab
                             .content
                             .chars()
@@ -269,38 +292,15 @@ impl EditorApp {
                             .sum();
                         let Some(word) = crate::editor::multi::word_at(&tab.content, byte_pos)
                         else {
-                            tab.multi = None;
                             continue;
                         };
-                        // Fresh seed: select the first occurrence of the word.
-                        if tab.multi.as_ref().is_none_or(|m| m.word != word) {
-                            let first = crate::editor::multi::occurrences(&tab.content, &word)
-                                .into_iter()
-                                .next();
+                        if let Some(first) =
+                            crate::editor::multi::occurrence_at(&tab.content, &word, byte_pos)
+                        {
                             tab.multi = Some(crate::editor::multi::MultiSel {
                                 word,
-                                ranges: first.into_iter().collect(),
+                                ranges: vec![first],
                             });
-                            continue;
-                        }
-                        // Same seed: add the next unselected occurrence.
-                        let after = tab
-                            .multi
-                            .as_ref()
-                            .map(|m| m.ranges.iter().map(|&(s, _)| s).max().unwrap_or(0))
-                            .unwrap_or(0);
-                        let sel = &tab.multi.as_ref().unwrap().ranges;
-                        if let Some(next) = crate::editor::multi::next_occurrence(
-                            &tab.content,
-                            &word,
-                            after,
-                            sel,
-                        ) {
-                            if let Some(m) = &mut tab.multi {
-                                m.ranges.push(next);
-                                m.ranges.sort_by_key(|&(s, _)| s);
-                                m.ranges.dedup();
-                            }
                         }
                     }
                 }

@@ -28,6 +28,17 @@ pub fn occurrences(content: &str, word: &str) -> Vec<(usize, usize)> {
         .collect()
 }
 
+/// The occurrence Ctrl+D selects on a fresh seed: the one the caret is inside,
+/// or — when the caret sits exactly on the end-of-word boundary — a fallback to
+/// the first occurrence (old behavior).
+pub fn occurrence_at(content: &str, word: &str, byte_pos: usize) -> Option<(usize, usize)> {
+    let occs = occurrences(content, word);
+    occs.iter()
+        .copied()
+        .find(|&(s, e)| s <= byte_pos && byte_pos < e)
+        .or(occs.first().copied())
+}
+
 /// The next occurrence not yet selected, preferring one at/after `after` and
 /// wrapping to the first — for Ctrl+D "add another".
 pub fn next_occurrence(
@@ -259,5 +270,20 @@ mod tests {
         assert_eq!(next_occurrence(c, "foo", 7, &sel), Some((8, 11)));
         let all: Vec<_> = occurrences(c, "foo");
         assert_eq!(next_occurrence(c, "foo", 11, &all), None);
+    }
+
+    #[test]
+    fn occurrence_at_picks_the_word_under_the_caret() {
+        let c = "foo foo foo";
+        // Caret on the 'o' of the second "foo" -> that occurrence, not the first.
+        assert_eq!(occurrence_at(c, "foo", 5), Some((4, 7)));
+        // Caret at the very start of the third one.
+        assert_eq!(occurrence_at(c, "foo", 8), Some((8, 11)));
+    }
+
+    #[test]
+    fn occurrence_at_falls_back_when_caret_is_on_word_boundary() {
+        // Caret right after "foo" (byte_pos == end) is not inside any range.
+        assert_eq!(occurrence_at("foo foo", "foo", 3), Some((0, 3)));
     }
 }

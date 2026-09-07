@@ -16,7 +16,9 @@ use crate::terminal::TerminalPanel;
 use crate::theme::Theme;
 
 mod actions;
-mod panels;
+mod chrome;
+mod explorer_bar;
+mod popups;
 mod utils;
 
 #[derive(Debug, Clone)]
@@ -226,9 +228,12 @@ impl eframe::App for EditorApp {
                 }
 
                 // Editor-area splash while a heavy file is being opened.
-                if let Some((ov, _t0)) = &mut self.loading {
+                if let Some((ov, t0)) = &mut self.loading {
                     if !ov.fullscreen {
                         ov.show(&ctx, Some(ui.max_rect()));
+                        if t0.elapsed() >= Duration::from_millis(600) {
+                            self.loading = None;
+                        }
                     }
                 }
             });
