@@ -3,7 +3,7 @@
 //!
 //! `TextEdit` edits whatever `&dyn TextBuffer` it is given, so folding is a
 //! *presentation* concern: the folded text (open line kept, interior hidden
-//! behind a `⋯` marker) is what gets painted, while all edits land in the real
+//! behind a `â‹¯` marker) is what gets painted, while all edits land in the real
 //! buffer — saving always writes the untouched file. Any edit touching a
 //! marker auto-unfolds that region first (the standard "click the marker and
 //! type to expand" behavior), so the mapping can never corrupt content.
@@ -19,7 +19,20 @@ use crate::guides::brackets::BracePair;
 use crate::icons::{Icon, Icons};
 use crate::tabs::Fold;
 
-const MARKER: &str = "⋯";
+const MARKER: &str = "â‹¯";
+
+/// Cheap fingerprint of a fold set, changed whenever any fold moves — the
+/// `(content hash, fold fingerprint)` key of the fold-view memo. A stable
+/// mix, order-sensitive: comparing it to itself across frames is all it does.
+pub(crate) fn fold_fp(folds: &[Fold]) -> u64 {
+    let mut h = 0xcbf2_9ce4_8422_2325u64;
+    for f in folds {
+        h ^= (f.open as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+            ^ (f.close as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        h = h.wrapping_mul(0x100_0000_01b3);
+    }
+    h
+}
 
 // ---------------------------------------------------------------------------
 // FoldView: display text + mapping, computed from (content, folds) with no
@@ -33,9 +46,9 @@ pub(crate) struct Row {
     pub(crate) line: usize,
     /// Char index where this row starts in the display text.
     pub(crate) char_start: usize,
-    /// Display char index of the inline `⋯` marker at the end of this row.
+    /// Display char index of the inline `â‹¯` marker at the end of this row.
     pub(crate) marker_char: Option<usize>,
-    /// Open-brace char index of the fold this row's `⋯` marker stands for.
+    /// Open-brace char index of the fold this row's `â‹¯` marker stands for.
     pub(crate) marker: Option<usize>,
 }
 
@@ -51,7 +64,7 @@ pub(crate) struct FoldView {
     pub(crate) real_row: Vec<usize>,
 }
 
-/// The display chars of one inline `⋯` marker (appended to its opening line).
+/// The display chars of one inline `â‹¯` marker (appended to its opening line).
 pub(crate) const MARKER_CHARS: usize = 1;
 
 impl FoldView {
@@ -126,7 +139,7 @@ pub(crate) fn build_fold_view(content: &str, folds: &[Fold]) -> FoldView {
             display.push(chars[ci]);
             count += 1;
         }
-        // Mature fold: the `⋯` marker rides at the end of the opening line
+        // Mature fold: the `â‹¯` marker rides at the end of the opening line
         // itself (no extra row), so a folded block reads like VS Code's. The
         // marker maps to `open + 1` — just inside the fold's opening brace —
         // so typing at the marker lands right after the `{`.
@@ -231,8 +244,14 @@ pub(crate) struct FoldBuffer<'a> {
 }
 
 impl<'a> FoldBuffer<'a> {
-    pub(crate) fn new(content: &'a mut String, folds: &'a mut Vec<Fold>) -> Self {
-        let view = build_fold_view(content, folds);
+    /// Like [`FoldBuffer`] but takes the display view the editor already
+    /// computed this frame (from its `FoldView` memo), so the file is not
+    /// re-processed twice.
+    pub(crate) fn with_view(
+        content: &'a mut String,
+        folds: &'a mut Vec<Fold>,
+        view: FoldView,
+    ) -> Self {
         Self { content, folds, view }
     }
 
@@ -250,7 +269,7 @@ impl<'a> FoldBuffer<'a> {
         self.view.d2r[di.min(n)]
     }
 
-    /// Open-brace indices of every fold whose inline `⋯` marker intersects (or
+    /// Open-brace indices of every fold whose inline `â‹¯` marker intersects (or
     /// is touched by) `[s,e)` — typing right at the marker's spot unfolds.
     fn markers_in(&self, s: usize, e: usize) -> Vec<usize> {
         let mut out = Vec::new();
@@ -300,7 +319,7 @@ impl TextBuffer for FoldBuffer<'_> {
         // Unfold FIRST, then map the edit onto the unfolded text: the user
         // always sees exactly what the edit touches — real hidden content is
         // never destroyed. The marker anchors at `open + 1`, so typing at the
-        // `⋯` lands right after the opening `{`.
+        // `â‹¯` lands right after the opening `{`.
         let opens = self.markers_in(di, di + 1);
         self.unfold(&opens);
         let ri = self.to_real(di);
@@ -469,7 +488,7 @@ mod tests {
         // Rows: line 0 (fn a, marker), line 3 (fn b, marker), trailing empty.
         assert_eq!(markers[0], Some(7));
         assert_eq!(markers[1], Some(27));
-        assert_eq!(view.display, "fn a() {⋯\nfn b() {⋯\n");
+        assert_eq!(view.display, "fn a() {â‹¯\nfn b() {â‹¯\n");
     }
 
     /// Only well-formed `{ ... }` blocks fold: fn bodies, if/else — but never
@@ -497,14 +516,14 @@ mod tests {
         assert!(expected.len() >= 3);
     }
 
-    /// The `⋯` marker must ride on the opening line itself (no extra row), so
+    /// The `â‹¯` marker must ride on the opening line itself (no extra row), so
     /// a folded file keeps line numbers 1:1 with reality.
     #[test]
     fn folded_display_uses_inline_marker() {
         let content = "fn a() {\n    x();\n}\nfn b() {\n    y();\n}\n";
         let folds = vec![Fold { open: 27, close: 35 }];
         let view = build_fold_view(content, &folds);
-        assert_eq!(view.display, "fn a() {\n    x();\n}\nfn b() {⋯\n}\n");
+        assert_eq!(view.display, "fn a() {\n    x();\n}\nfn b() {â‹¯\n}\n");
         // Lines 0..3, the fold's closing line 5 and the trailing empty line.
         assert_eq!(view.rows.len(), 6);
         assert_eq!(view.rows[3].line, 3);
@@ -525,7 +544,8 @@ mod tests {
         // text — '!' goes right after the opening '{'.
         let mut content = original.clone();
         let mut folds = vec![Fold { open: 27, close: 35 }];
-        let mut fb = FoldBuffer::new(&mut content, &mut folds);
+        let view = build_fold_view(&content, &folds);
+        let mut fb = FoldBuffer::with_view(&mut content, &mut folds, view);
         assert_eq!(fb.insert_text("!", egui::text::CharIndex(28)), 1);
         assert!(folds.is_empty());
         assert!(content.contains("fn b() {!"));
@@ -534,7 +554,8 @@ mod tests {
         // newline that the marker showed — nothing hidden is ever destroyed.
         let mut content = original.clone();
         let mut folds = vec![Fold { open: 27, close: 35 }];
-        let mut fb = FoldBuffer::new(&mut content, &mut folds);
+        let view = build_fold_view(&content, &folds);
+        let mut fb = FoldBuffer::with_view(&mut content, &mut folds, view);
         fb.delete_char_range(egui::text::CharIndex(28)..egui::text::CharIndex(29));
         assert!(folds.is_empty());
         assert_eq!(content, "fn a() {\n    x();\n}\nfn b() {    y();\n}\n");

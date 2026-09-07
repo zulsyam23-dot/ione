@@ -9,6 +9,9 @@ pub struct Symbol {
     pub kind: &'static str,
     pub line: usize,
     pub depth: usize,
+    /// Paren group right after the name for callable symbols (`(a, b)`), empty
+    /// otherwise — feeds the completion popup's signature detail.
+    pub params: String,
 }
 
 pub struct OutlinePanel;
@@ -22,15 +25,13 @@ impl OutlinePanel {
         &self,
         ui: &mut egui::Ui,
         palette: &Palette,
-        content: &str,
-        syntax: &Syntax,
+        symbols: &[Symbol],
     ) -> Option<usize> {
-        let syms = extract_symbols(content, syntax);
         ui.horizontal(|ui| {
             ui.label(header_label(ui, "Outline"));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(
-                    RichText::new(format!("{} items", syms.len()))
+                    RichText::new(format!("{} items", symbols.len()))
                         .size(11.0)
                         .color(palette.text_muted),
                 );
@@ -38,7 +39,7 @@ impl OutlinePanel {
         });
         ui.add_space(6.0);
 
-        if syms.is_empty() {
+        if symbols.is_empty() {
             ui.label(RichText::new("No symbols found").color(palette.text_muted));
             return None;
         }
@@ -48,7 +49,7 @@ impl OutlinePanel {
             .id_salt("outline_scroll")
             .auto_shrink([false, true])
             .show(ui, |ui| {
-                for sym in &syms {
+                for sym in symbols {
                     let row = ui
                         .horizontal(|ui| {
                             ui.add_space(sym.depth as f32 * 9.0);
@@ -92,7 +93,7 @@ impl OutlinePanel {
     }
 }
 
-fn extract_symbols(content: &str, syntax: &Syntax) -> Vec<Symbol> {
+pub(crate) fn extract_symbols(content: &str, syntax: &Syntax) -> Vec<Symbol> {
     match syntax.language() {
         "Rust" => extract_rust(content),
         "Python" => extract_python(content),
@@ -102,12 +103,53 @@ fn extract_symbols(content: &str, syntax: &Syntax) -> Vec<Symbol> {
 }
 
 fn push(syms: &mut Vec<Symbol>, line: &str, lineno: usize, kind: &'static str, name: &str) {
+    push_with_params(syms, line, lineno, kind, name, String::new());
+}
+
+fn push_with_params(
+    syms: &mut Vec<Symbol>,
+    line: &str,
+    lineno: usize,
+    kind: &'static str,
+    name: &str,
+    params: String,
+) {
     syms.push(Symbol {
         name: name.to_string(),
         kind,
         line: lineno,
         depth: indent_of(line),
+        params,
     });
+}
+
+/// The first balanced paren group in `line` (`(a: i32, b: i32)`), or empty —
+/// used for function-like symbols.
+fn params_of(line: &str) -> String {
+    let Some(open) = line.find('(') else {
+        return String::new();
+    };
+    let text = &line[open..];
+    let mut depth = 0usize;
+    for (i, c) in text.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    let group = &text[..i + c.len_utf8()];
+                    // `fn main() {}` has no params — don't report an empty `()`.
+                    return if group.len() == 2 {
+                        String::new()
+                    } else {
+                        group.to_string()
+                    };
+                }
+            }
+            _ => {}
+        }
+    }
+    text.to_string()
 }
 
 fn indent_of(line: &str) -> usize {
@@ -122,7 +164,7 @@ fn extract_rust(content: &str) -> Vec<Symbol> {
             continue;
         }
         if let Some(name) = after_kw(line, "fn") {
-            push(&mut syms, raw, i + 1, "fn", name);
+            push_with_params(&mut syms, raw, i + 1, "fn", name, params_of(line));
         } else if let Some(name) = after_kw(line, "struct") {
             push(&mut syms, raw, i + 1, "struct", name);
         } else if let Some(name) = after_kw(line, "enum") {
@@ -150,7 +192,7 @@ fn extract_python(content: &str) -> Vec<Symbol> {
             continue;
         }
         if let Some(name) = after_kw(line, "def") {
-            push(&mut syms, raw, i + 1, "function", name);
+            push_with_params(&mut syms, raw, i + 1, "function", name, params_of(line));
         } else if let Some(name) = after_kw(line, "class") {
             push(&mut syms, raw, i + 1, "class", name);
         }
@@ -166,12 +208,12 @@ fn extract_generic(content: &str) -> Vec<Symbol> {
             continue;
         }
         if let Some(name) = after_kw(line, "function") {
-            push(&mut syms, raw, i + 1, "function", name);
+            push_with_params(&mut syms, raw, i + 1, "function", name, params_of(line));
         } else if let Some(name) = after_kw(line, "local function") {
-            push(&mut syms, raw, i + 1, "function", name);
+            push_with_params(&mut syms, raw, i + 1, "function", name, params_of(line));
         } else if line.contains('(') && line.contains(')') && !line.contains(' ') {
             let name: String = line.chars().take_while(|&c| c != '(').collect();
-            push(&mut syms, raw, i + 1, "function", &name);
+            push_with_params(&mut syms, raw, i + 1, "function", &name, params_of(line));
         }
     }
     syms
@@ -214,12 +256,14 @@ mod tests {
 
     #[test]
     fn rust_symbols() {
-        let src = "fn main() {}\nstruct Foo<T> {}\nimpl Foo {}\nenum Color {}\nconst X: i32 = 1;\n// fn comment\n";
+        let src = "fn main() {}\nfn add(a: i32, b: i32) -> i32 { a + b }\nstruct Foo<T> {}\nimpl Foo {}\nenum Color {}\nconst X: i32 = 1;\n// fn comment\n";
         let s = extract_symbols(src, &egui_code_editor::Syntax::rust());
         let names: Vec<&str> = s.iter().map(|x| x.name.as_str()).collect();
-        assert_eq!(names, ["main", "Foo", "Foo", "Color", "X"]);
+        assert_eq!(names, ["main", "add", "Foo", "Foo", "Color", "X"]);
         assert_eq!(s[0].line, 1);
         assert_eq!(s[0].kind, "fn");
+        assert_eq!(s[0].params, "");
+        assert_eq!(s[1].params, "(a: i32, b: i32)");
     }
 
     #[test]
@@ -229,5 +273,7 @@ mod tests {
         let names: Vec<&str> = s.iter().map(|x| x.name.as_str()).collect();
         assert_eq!(names, ["add", "Dog", "bark"]);
         assert_eq!(s[2].depth, 4);
+        assert_eq!(s[0].params, "(a, b)");
+        assert_eq!(s[2].params, "(self)");
     }
 }

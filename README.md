@@ -39,7 +39,7 @@
 | **Find & Replace** | Hasil live, ganti satu-satu atau ganti semua |
 | **Code Folding** | Lipat blok `{ … }` dengan `Ctrl+Shift+[` / `Ctrl+Shift+]` |
 | **Multi-select edit** | `Ctrl+D` pilih kejadian kata berikutnya, satu ketikan diedit ke semua sekaligus |
-| **Error/Warning decoration** | Squiggle `~~~~~` merah/kuning + tooltip + count di status bar |
+| **Error/Warning decoration** | Squiggle merah/kuning + tooltip + count di status bar — deteksi kurung akurat per bahasa: JS/TS/JSX/TSX (template & regex), lifetime/raw-string Rust, tanpa error palsu |
 | **Bracket guides** | Panduan pasangan kurung + rainbow brackets (bisa dimatikan via View → Editor Guides) |
 | **Outline panel** | Navigasi struktur file aktif |
 | **Tema Dark/Light** | Hitam murni & putih, sudut tajam; GitHub Light masih **beta** (ada konfirmasi saat memilih) |

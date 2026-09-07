@@ -51,11 +51,13 @@ impl EditorApp {
                         ui.separator();
                         ui.label(RichText::new("UTF-8").color(p.text_muted));
                         let errs = tab
+                            .cache
                             .diagnostics
                             .iter()
                             .filter(|d| d.severity == Severity::Error)
                             .count();
                         let warns = tab
+                            .cache
                             .diagnostics
                             .iter()
                             .filter(|d| d.severity == Severity::Warning)

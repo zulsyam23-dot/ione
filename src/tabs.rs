@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use egui_code_editor::highlighting::Links;
 use egui_code_editor::Syntax;
+
+use crate::guides::brackets::BracketScan;
 
 fn next_tab_uid() -> u64 {
     static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -34,11 +37,41 @@ pub struct Tab {
     /// Active multi-select: seed word + live caret/selection ranges. `None`
     /// when inactive (see `editor::multi`).
     pub multi: Option<crate::editor::multi::MultiSel>,
-    /// Built-in error/warning diagnostics, recomputed only when the content
-    /// hash changes (see `diagnostics`).
-    pub diagnostics: Vec<crate::diagnostics::Diagnostic>,
-    /// Content hash the current diagnostics were computed from.
+    /// Live autocomplete popup state; `None` while hidden (see `completion`).
+    pub completion: Option<crate::completion::CompletionState>,
+    /// Content hash the cached passes were computed from (see `refresh_cache`).
     pub diag_hash: u64,
+    /// Memoized per-character artifacts. Everything is keyed on the content
+    /// hash: recomputed once per content change, reused for frames after that.
+    /// `view` is additionally keyed on the fold set (see `fold_view_cache`).
+    pub cache: TabCache,
+}
+
+/// Per-character buffers recomputed only when the file changes, not per frame.
+pub struct TabCache {
+    pub diagnostics: Vec<crate::diagnostics::Diagnostic>,
+    pub symbols: Vec<crate::outline::Symbol>,
+    pub scan: BracketScan,
+    pub fold_opens: Vec<usize>,
+    /// Fold view keyed on `(content hash, fold fingerprint, view)`.
+    pub fold_view_cache: Option<(u64, u64, crate::editor::folds::FoldView)>,
+    /// Style key covering theme/overlay/palette/syntax for the mask+links.
+    pub style_key: u64,
+    pub job_cache: Option<(u64, u64, eframe::egui::text::LayoutJob, Links, crate::editor::styling::Styled)>,
+}
+
+impl Default for TabCache {
+    fn default() -> Self {
+        Self {
+            diagnostics: Vec::new(),
+            symbols: Vec::new(),
+            scan: BracketScan::default(),
+            fold_opens: Vec::new(),
+            fold_view_cache: None,
+            style_key: 0,
+            job_cache: None,
+        }
+    }
 }
 
 impl Tab {
@@ -57,7 +90,8 @@ impl Tab {
             pending_find: None,
             folds: Vec::new(),
             multi: None,
-            diagnostics: Vec::new(),
+            completion: None,
+            cache: TabCache::default(),
             diag_hash: 0,
         }
     }
@@ -81,7 +115,8 @@ impl Tab {
             pending_find: None,
             folds: Vec::new(),
             multi: None,
-            diagnostics: Vec::new(),
+            completion: None,
+            cache: TabCache::default(),
             diag_hash: 0,
         }
     }
@@ -92,6 +127,38 @@ impl Tab {
         } else {
             self.name.clone()
         }
+    }
+
+    /// Recompute the per-character cached artifacts (`cache`) only when the
+    /// content hash or the active style changed. Runs once per frame at most;
+    /// no-op on idle frames.
+    pub fn refresh_cache(
+        &mut self,
+        theme: crate::theme::Theme,
+        editor_bg: &'static str,
+        overlay: &crate::guides::EditorOverlay,
+        palette: &crate::style::Palette,
+    ) {
+        let mut color_theme = theme.to_color_theme();
+        color_theme.bg = editor_bg;
+        let style_key = crate::editor::styling::style_key(&color_theme, overlay, palette, &self.syntax);
+        let hash = crate::diagnostics::hash_content(&self.content);
+        if hash == self.diag_hash && self.cache.style_key == style_key {
+            return;
+        }
+        let (d, scan) = crate::diagnostics::analyze_with_scan(&self.content, &self.syntax);
+        let symbols = crate::outline::extract_symbols(&self.content, &self.syntax);
+        let fold_opens = crate::editor::folds::foldable_opens(&self.content, &scan.brace_pairs);
+        self.cache = TabCache {
+            diagnostics: d,
+            symbols,
+            scan,
+            fold_opens,
+            fold_view_cache: None,
+            style_key,
+            job_cache: None,
+        };
+        self.diag_hash = hash;
     }
 }
 
@@ -203,6 +270,8 @@ impl TabManager {
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| "untitled".to_string());
             tab.dirty = false;
+            // The extension may have changed; re-pick highlight + completion.
+            tab.syntax = Self::detect_syntax(&path);
         }
         Ok(path)
     }
@@ -213,7 +282,7 @@ impl TabManager {
             .and_then(|e| e.to_str())
             .unwrap_or("")
         {
-            "rs" => Syntax::rust(),
+            "rs" | "rust" => Syntax::rust(),
             "py" => Syntax::python(),
             "lua" => Syntax::lua(),
             "sh" | "bash" | "zsh" => Syntax::shell(),
@@ -306,5 +375,26 @@ impl TabManager {
                 .with_special(["false", "null", "true"]),
             _ => Syntax::new("plain"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detect_syntax_rust_equals_main_and_rust_alias() {
+        assert_eq!(
+            TabManager::detect_syntax(&PathBuf::from("src/main.rs")).language(),
+            "Rust"
+        );
+        assert_eq!(
+            TabManager::detect_syntax(&PathBuf::from("lib.rust")).language(),
+            "Rust"
+        );
+        assert_eq!(
+            TabManager::detect_syntax(&PathBuf::from("note.txt")).language(),
+            "plain"
+        );
     }
 }

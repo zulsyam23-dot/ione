@@ -50,6 +50,8 @@
 - Klik ganda/ikon untuk membuka file.
 - Klik kanan untuk menu: **Open, Rename, Delete, Copy Path**.
 - Auto-refresh saat folder dibuka.
+- **Tahan kedalaman tak terbatas:** indentasi baris dibatasi otomatis sehingga pohon sesedalam apa pun tetap tampil rapi — tidak ada baris yang pernah "hilang" meski foldernya sangat dalam.
+- **Garis pemisah permanen** di tepi kanan explorer (antara explorer ↔ editor) digambar di lapisan teratas, jadi selalu terlihat — berapa pun isi/tinggi pohon atau status scroll.
 
 ### 🔍 Find & Replace
 - Pencarian teks dengan hasil **live**.
@@ -79,6 +81,10 @@
   - **Indentasi campuran tab+spasi** → warning.
 - Ditampilkan sebagai **squiggle `~~~~~`** (merah = error, kuning = warning), **tooltip** saat hover, **marker** di gutter, dan **hitungan** di status bar.
 - Analisis hanya dijalankan ulang saat konten berubah; rentang tersembunyi di balik fold otomatis dilewati.
+- Pemeriksaan kurung **akurat per bahasa** — tidak ada lagi *error palsu* ("unbalanced" disebabkan teks biasa):
+  - **JavaScript / TypeScript — termasuk JSX & TSX:** literal *template string* `` `…${…}` `` dan *regex literal* `/…/` dikenali dengan benar. Isi `${…}` **tetap** diperiksa kurungnya; sebaliknya regex beserta quantifier-nya (`/a{2,3}/`, `/[{}(]/`) tidak pernah dianggap kurung hilang. Pembagian (`a / b`) vs regex dibedakan lewat konteks pemanggilan.
+  - **Rust:** string `"…"`, *raw string* `r#"…"#`, char literal `'a'`, dan *lifetime* `'a` dilewati — apostrof pada lifetime tidak lagi memicu error palsu.
+  - **Bahasa lain** (Python, C/C++, HTML/CSS, JSON, TOML, dsb.): scanner generik melewati string & komentar dengan benar.
 
 ### 🎯 Bracket Guides & Rainbow Brackets
 - Panah panduan vertikal untuk pasangan kurung multi-baris (bisa di-hover).
@@ -111,6 +117,7 @@
 - ✅ **Bisa ganti font** untuk pengalaman coding yang nyaman.
 - ✅ **Open source penuh kontrol**, kode sederhana dan mudah dikembangkan.
 - ✅ **Self-contained**: tidak butuh ekstensi rumit untuk fitur inti.
+- ✅ **Deteksi error anti-palsu**: parser sadar bahasa (JS/TS/JSX/TSX template & regex, lifetime/raw-string Rust) — yang dilaporkan hanya error sungguhan, bukan teks biasa yang salah dibaca.
 
 ---
 

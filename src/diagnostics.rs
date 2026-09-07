@@ -11,6 +11,7 @@ use eframe::egui::{self, Rect, Stroke};
 use egui_code_editor::Syntax;
 
 use crate::editor::folds::FoldView;
+use crate::guides::brackets::BracketScan;
 use crate::guides::geometry::char_rect;
 use crate::guides::analyze_brackets;
 use crate::style::Palette;
@@ -40,8 +41,10 @@ impl Diagnostic {
     }
 }
 
-/// Analyze `content` with the given syntax and return sorted diagnostics.
-pub fn analyze(content: &str, syntax: &Syntax) -> Vec<Diagnostic> {
+/// Analyze `content` with the given syntax and return sorted diagnostics plus
+/// the mask-aware bracket scan (the scanner runs once and is shared with the
+/// editor overlay cache).
+pub fn analyze_with_scan(content: &str, syntax: &Syntax) -> (Vec<Diagnostic>, BracketScan) {
     let mut out = Vec::new();
     let chars: Vec<char> = content.chars().collect();
     let (mask, _) = crate::editor::styling::mask_and_links(content, syntax);
@@ -82,7 +85,7 @@ pub fn analyze(content: &str, syntax: &Syntax) -> Vec<Diagnostic> {
     }
 
     out.sort_by_key(|d| d.start);
-    out
+    (out, scan)
 }
 
 /// Draw the squiggle under every visible diagnostic and, when the pointer
@@ -203,7 +206,7 @@ mod tests {
     use super::*;
 
     fn msgs(content: &str, syntax: Option<Syntax>) -> Vec<(Severity, String)> {
-        analyze(content, &syntax.unwrap_or_else(Syntax::rust))
+        analyze_with_scan(content, &syntax.unwrap_or_else(Syntax::rust)).0
             .into_iter()
             .map(|d| (d.severity, d.message))
             .collect()
@@ -237,14 +240,14 @@ mod tests {
     #[test]
     fn trailing_whitespace_is_a_warning_with_line_range() {
         let content = "let a = 1;   \nlet b = 2;\n";
-        let d = analyze(content, &Syntax::rust());
+        let d = analyze_with_scan(content, &Syntax::rust()).0;
         let tws: Vec<&Diagnostic> = d.iter().filter(|d| d.message.contains("trailing")).collect();
         assert_eq!(tws.len(), 1);
         assert_eq!(tws[0].start, 10); // chars 10..13 are the three trailing spaces
         assert_eq!(tws[0].end, 13);
         assert_eq!(&content[tws[0].start..tws[0].end], "   ");
         // Fully-blank line: no trailing-whitespace warning.
-        let d = analyze("a();\n     \nb();\n", &Syntax::rust());
+        let d = analyze_with_scan("a();\n     \nb();\n", &Syntax::rust()).0;
         assert!(d.iter().all(|d| !d.message.contains("trailing")));
     }
 
@@ -260,7 +263,7 @@ mod tests {
     #[test]
     fn diagnostics_are_sorted() {
         let content = "if a {\n\t  x(;\n\nb(;\n   \n}\n".to_string();
-        let d = analyze(&content, &Syntax::rust());
+        let d = analyze_with_scan(&content, &Syntax::rust()).0;
         for w in d.windows(2) {
             assert!(w[0].start <= w[1].start);
         }

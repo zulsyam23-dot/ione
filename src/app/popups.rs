@@ -52,6 +52,65 @@ impl EditorApp {
         }
     }
 
+    pub(super) fn show_new_file_window(&mut self, ctx: &egui::Context) {
+        let mut state = match self.naming.take() {
+            Some(s) => s,
+            None => return,
+        };
+        let is_folder = matches!(state.kind, super::NamingKind::Folder);
+        let mut submitted = false;
+        let mut cancelled = false;
+        egui::Window::new(if is_folder { "New Folder" } else { "New File" })
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(if is_folder {
+                    "Folder name:"
+                } else {
+                    "File name:"
+                });
+                let mut output = egui::TextEdit::singleline(&mut state.input).show(ui);
+                if !output.response.has_focus() {
+                    // Select the prefill on first show so typing replaces it.
+                    output.response.request_focus();
+                    if output.galley.chars().count() > 0 {
+                        let range = egui::text::CCursorRange::select_all(&output.galley);
+                        output.state.cursor.set_char_range(Some(range));
+                        output.state.store(ui.ctx(), output.response.id);
+                    }
+                }
+                let enter = output.response.lost_focus()
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                ui.horizontal(|ui| {
+                    if ui.button("Create").clicked() {
+                        submitted = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancelled = true;
+                    }
+                });
+                if enter {
+                    submitted = true;
+                }
+                if esc {
+                    cancelled = true;
+                }
+            });
+        if submitted {
+            if is_folder {
+                self.create_new_folder(&state.input, state.parent.clone());
+            } else {
+                self.create_new_file(&state.input, state.parent.as_deref());
+            }
+            self.naming = None;
+        } else if cancelled {
+            self.naming = None;
+        } else {
+            self.naming = Some(state);
+        }
+    }
+
     pub(super) fn show_about_window(&mut self, ctx: &egui::Context) {
         if !self.show_about {
             return;

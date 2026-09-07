@@ -30,7 +30,7 @@ pub(crate) struct BracePair {
 /// First-class result of a bracket scan: per-char nesting depth (used for
 /// rainbow coloring), the sorted pair inventory (used for guides), the `{}`
 /// pairs (used for folding), and stray closing brackets (used for diagnostics).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct BracketScan {
     pub(crate) depths: Vec<u8>,
     pub(crate) pairs: Vec<Pair>,

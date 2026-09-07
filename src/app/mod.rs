@@ -24,6 +24,8 @@ mod utils;
 #[derive(Debug, Clone)]
 pub enum AppCommand {
     NewFile,
+    NewFileIn(PathBuf),
+    NewFolder(Option<PathBuf>),
     OpenFile,
     OpenFilePath(PathBuf),
     OpenFolder,
@@ -71,6 +73,7 @@ pub struct EditorApp {
     pub last_auto_save: Instant,
     pub outline_frac: f32,
     pub renaming: Option<RenameState>,
+    pub naming: Option<NamingState>,
     pub logo: Option<egui::TextureHandle>,
     pub loading: Option<(LoadingOverlay, Instant)>,
     pub ctrl_k_pending: bool,
@@ -82,6 +85,20 @@ pub struct EditorApp {
 pub struct RenameState {
     pub path: PathBuf,
     pub input: String,
+}
+
+/// In-progress "New File"/"New Folder" dialog: the typed name.
+pub struct NamingState {
+    pub input: String,
+    pub kind: NamingKind,
+    /// Where a new folder goes (root if None).
+    pub parent: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy)]
+pub enum NamingKind {
+    File,
+    Folder,
 }
 
 impl Default for EditorApp {
@@ -102,6 +119,7 @@ impl Default for EditorApp {
             last_auto_save: Instant::now(),
             outline_frac: 0.4,
             renaming: None,
+            naming: None,
             logo: None,
             loading: None,
             ctrl_k_pending: false,
@@ -115,6 +133,11 @@ impl Default for EditorApp {
 impl EditorApp {
     pub fn new() -> Self {
         let mut app = Self::default();
+        // Default workspace = the user's Documents, so new files/folders are
+        // easy to find instead of living in an invisible in-memory state.
+        if let Some(docs) = utils::documents_dir() {
+            app.file_tree.set_root(docs);
+        }
         if let Some(ov) = LoadingOverlay::new() {
             app.loading = Some((ov, Instant::now()));
         }
@@ -158,15 +181,21 @@ impl eframe::App for EditorApp {
         self.show_title_bar(root_ui, &mut commands);
 
         // Left sidebar (file explorer).
-        if self.show_sidebar {
-            egui::Panel::left("sidebar")
-                .exact_size(230.0)
-                .show_separator_line(false)
-                .frame(frame(self.palette.panel, self.palette.border, 0, 8))
-                .show(root_ui, |ui| {
-                    self.show_sidebar(&mut commands, ui);
-                });
-        }
+        let sidebar_rect = if self.show_sidebar {
+            Some(
+                egui::Panel::left("sidebar")
+                    .exact_size(230.0)
+                    .show_separator_line(false)
+                    .frame(frame(self.palette.panel, self.palette.border, 0, 8))
+                    .show(root_ui, |ui| {
+                        self.show_sidebar(&mut commands, ui);
+                    })
+                    .response
+                    .rect,
+            )
+        } else {
+            None
+        };
 
         // Bottom status bar. Added FIRST so it sits innermost (against the
         // screen bottom); the terminal (added after) stacks above it.
@@ -204,7 +233,7 @@ impl eframe::App for EditorApp {
                 let content = self
                     .tabs
                     .active_tab()
-                    .map(|t| t.content.clone())
+                    .map(|t| t.content.as_str())
                     .unwrap_or_default();
 
                 self.show_breadcrumbs(ui, &mut commands);
@@ -213,7 +242,7 @@ impl eframe::App for EditorApp {
                     self.search.show(
                         ui,
                         &mut self.icons,
-                        &content,
+                        content,
                         self.file_tree.root.as_ref(),
                         &mut commands,
                     );
@@ -240,7 +269,16 @@ impl eframe::App for EditorApp {
 
         self.show_about_window(&ctx);
         self.show_rename_window(&ctx);
+        self.show_new_file_window(&ctx);
         self.show_theme_confirm(&ctx, &mut commands);
+
+        // Persistent divider at the explorer's right edge, painted last so no
+        // panel content (tree rows, scrollbars) can ever cover it.
+        if let Some(r) = sidebar_rect {
+            root_ui
+                .painter()
+                .vline(r.right() - 0.5, r.y_range(), egui::Stroke::new(1.0, self.palette.border));
+        }
 
         self.process_commands(commands, &ctx);
         self.show_font_msg(&ctx);

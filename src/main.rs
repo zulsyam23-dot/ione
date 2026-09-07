@@ -6,6 +6,7 @@ mod menu;
 mod guides;
 mod file_tree;
 mod outline;
+mod completion;
 mod search;
 mod style;
 mod terminal;

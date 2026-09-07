@@ -88,6 +88,32 @@ impl FileTree {
         }
     }
 
+    /// Number of folders directly under `parent` (or the root when None) —
+    /// used to prefill unique `untitled-folder-N` names.
+    pub fn count_dirs(&self, parent: Option<&Path>) -> usize {
+        self.entries
+            .iter()
+            .filter(|e| e.is_dir)
+            .filter(|e| match parent {
+                Some(p) => e.path.parent() == Some(p),
+                None => e.depth == 0,
+            })
+            .count()
+    }
+
+    /// Number of files directly under `parent` — used to prefill unique
+    /// `untitled-N.rs` file names without colliding.
+    pub fn count_files(&self, parent: Option<&Path>) -> usize {
+        self.entries
+            .iter()
+            .filter(|e| !e.is_dir)
+            .filter(|e| match parent {
+                Some(p) => e.path.parent() == Some(p),
+                None => e.depth == 0,
+            })
+            .count()
+    }
+
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -116,13 +142,17 @@ impl FileTree {
             .auto_shrink([false, false])
             .show(ui, |ui| {
         for entry in &entries {
-            let indent = entry.depth as f32 * 16.0;
+            // Cap visual indent so deep folders can't push rows past the panel
+            // edge (which made `available_width` go negative and stopped the
+            // rows rendering).
+            const MAX_INDENT: f32 = 256.0;
+            let indent = (entry.depth as f32 * 16.0).min(MAX_INDENT);
 
             // Full-row hover highlight like Zed's file explorer.
             let row_height = ui.spacing().interact_size.y + 2.0;
             let row_rect = egui::Rect::from_min_size(
                 ui.cursor().min,
-                egui::vec2(ui.available_width(), row_height),
+                egui::vec2(ui.available_width().max(0.0), row_height),
             );
             let hovered = ui.rect_contains_pointer(row_rect);
             let fill = if hovered {
@@ -144,6 +174,31 @@ impl FileTree {
             );
 
             ui.horizontal(|ui| {
+                if entry.is_dir {
+                    // Left-click "+": fixed left column on every folder row, so
+                    // nesting never shifts it sideways (and never the scrollbar).
+                    let plus = ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new("+").size(14.0).color(palette.text_muted),
+                            )
+                            .frame(false),
+                        )
+                        .on_hover_text("Add file or folder");
+                    egui::Popup::menu(&plus).show(|ui| {
+                        if ui.button("New File").clicked() {
+                            commands.push(AppCommand::NewFileIn(entry.path.clone()));
+                            ui.close();
+                        }
+                        if ui.button("New Folder").clicked() {
+                            commands.push(AppCommand::NewFolder(Some(entry.path.clone())));
+                            ui.close();
+                        }
+                    });
+                } else {
+                    // Keep the icon columns aligned with folder rows above.
+                    ui.add_space(14.0);
+                }
                 ui.add_space(indent);
                 if entry.is_dir {
                     let chevron = if self.expanded.contains(&entry.path) {
@@ -183,6 +238,16 @@ impl FileTree {
                 toggle_path = Some(entry.path.clone());
             }
             row_resp.context_menu(|ui| {
+                if entry.is_dir {
+                    if ui.button("New File").clicked() {
+                        commands.push(AppCommand::NewFileIn(entry.path.clone()));
+                        ui.close();
+                    }
+                    if ui.button("New Folder").clicked() {
+                        commands.push(AppCommand::NewFolder(Some(entry.path.clone())));
+                        ui.close();
+                    }
+                }
                 if ui.button("Open").clicked() {
                     if entry.is_dir {
                         toggle_path = Some(entry.path.clone());

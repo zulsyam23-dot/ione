@@ -7,8 +7,16 @@ use crate::loading::LoadingOverlay;
 use crate::tabs::TabManager;
 
 use super::EditorApp;
-use super::utils::{apply_egui_theme, find_next_range, find_prev_range, replace_all_in_content, replace_first};
-use super::{AppCommand, RenameState};
+use super::utils::{
+    apply_egui_theme, documents_dir, find_next_range, find_prev_range, replace_all_in_content,
+    replace_first,
+};
+use super::{AppCommand, NamingKind, NamingState, RenameState};
+
+/// `Some(new.join(rest))` when `p` lives under `old` (itself included).
+fn remap_under(p: &Path, old: &Path, new: &Path) -> Option<PathBuf> {
+    p.strip_prefix(old).ok().map(|rest| new.join(rest))
+}
 
 impl EditorApp {
     pub(super) fn auto_save(&mut self, ctx: &egui::Context) {
@@ -18,13 +26,17 @@ impl EditorApp {
             .iter()
             .any(|t| t.dirty && t.path.is_some());
         if has_dirty {
-            ctx.request_repaint_after(std::time::Duration::from_millis(500));
-            if self.last_auto_save.elapsed() >= std::time::Duration::from_secs(2) {
+            // Wake once, at the next 2s deadline — not every 500ms on a timer.
+            let interval = std::time::Duration::from_secs(2);
+            let elapsed = self.last_auto_save.elapsed();
+            if elapsed >= interval {
                 let (_, errors) = self.tabs.save_all_dirty();
                 if !errors.is_empty() {
                     self.font_msg = Some((errors.join("; "), Instant::now()));
                 }
                 self.last_auto_save = Instant::now();
+            } else {
+                ctx.request_repaint_after(interval - elapsed);
             }
         }
     }
@@ -43,22 +55,38 @@ impl EditorApp {
         if new_name.is_empty() {
             return;
         }
-        let new_path = match path.parent() {
-            Some(parent) => parent.join(new_name),
-            None => return,
-        };
+        let Some(parent) = path.parent() else { return };
+        let new_path = parent.join(new_name);
         if new_path == path {
             return;
         }
-        if std::fs::rename(path, &new_path).is_err() {
+        if let Err(e) = std::fs::rename(path, &new_path) {
+            self.font_msg = Some((format!("Rename gagal: {e}"), Instant::now()));
             return;
+        }
+        // Keep the workspace alive when the root itself is renamed.
+        if self.file_tree.root.as_deref() == Some(path) {
+            self.file_tree.root = Some(new_path.clone());
+        }
+        // Folders keep their expansion state; open tabs below the renamed
+        // folder (or the renamed file itself) keep pointing at new_path,
+        // otherwise Save writes into a deleted path.
+        for p in self.file_tree.expanded.iter_mut() {
+            if let Some(np) = remap_under(p, path, &new_path) {
+                *p = np;
+            }
         }
         self.file_tree.refresh();
         for tab in self.tabs.tabs.iter_mut() {
-            if tab.path.as_deref() == Some(path) {
-                tab.path = Some(new_path.clone());
-                tab.name = new_name.to_string();
-            }
+            let Some(tp) = tab.path.clone() else { continue };
+            let Some(np) = remap_under(&tp, path, &new_path) else { continue };
+            tab.path = Some(np.clone());
+            tab.name = np
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            // Extension may have changed; re-pick the highlight + completion.
+            tab.syntax = TabManager::detect_syntax(&np);
         }
     }
 
@@ -85,12 +113,40 @@ impl EditorApp {
                         .iter()
                         .filter(|t| t.path.is_none())
                         .count();
-                    let name = if count == 0 {
-                        "untitled".to_string()
+                    let prefill = if count == 0 {
+                        "untitled.rs".to_string()
                     } else {
-                        format!("untitled-{}", count + 1)
+                        format!("untitled-{}.rs", count + 1)
                     };
-                    self.tabs.new_file(&name, egui_code_editor::Syntax::new("plain"));
+                    self.naming = Some(NamingState {
+                        input: prefill,
+                        kind: NamingKind::File,
+                        parent: None,
+                    });
+                }
+                AppCommand::NewFolder(parent) => {
+                    let n = self.file_tree.count_dirs(parent.as_deref());
+                    self.naming = Some(NamingState {
+                        input: if n == 0 {
+                            "untitled-folder".to_string()
+                        } else {
+                            format!("untitled-folder-{}", n + 1)
+                        },
+                        kind: NamingKind::Folder,
+                        parent,
+                    });
+                }
+                AppCommand::NewFileIn(dir) => {
+                    let n = self.file_tree.count_files(Some(&dir));
+                    self.naming = Some(NamingState {
+                        input: if n == 0 {
+                            "untitled.rs".to_string()
+                        } else {
+                            format!("untitled-{}.rs", n + 1)
+                        },
+                        kind: NamingKind::File,
+                        parent: Some(dir),
+                    });
                 }
                 AppCommand::OpenFile => {
                     if let Some(path) = rfd::FileDialog::new()
@@ -338,7 +394,116 @@ impl EditorApp {
         if let Some(path) = rfd::FileDialog::new().save_file() {
             if let Err(e) = self.tabs.save_active_as(path) {
                 self.font_msg = Some((e, Instant::now()));
+            } else {
+                // A file created on disk must appear in the explorer right away.
+                self.file_tree.refresh();
             }
         }
+    }
+
+    /// Create the file the "New File" dialog submitted. With a folder open the
+    /// file is written to disk immediately (so it shows up in the explorer, VS
+    /// Code style); otherwise the tab stays in-memory until Save As gives it a
+    /// path. A name that already exists is opened, never overwritten. `parent`
+    /// overrides the workspace root so a context-menu "New File in folder"
+    /// lands exactly where the user right-clicked.
+    pub(super) fn create_new_file(&mut self, name: &str, parent: Option<&Path>) {
+        let name = name.trim();
+        // Only a plain file name is accepted: no separators, no `.` / `..`.
+        let ok = !name.is_empty()
+            && Path::new(name).components().count() == 1
+            && !name.contains(['/', '\\', ':']);
+        if !ok {
+            return;
+        }
+        let dir = parent
+            .map(Path::to_path_buf)
+            .or_else(|| self.file_tree.root.clone())
+            .or_else(documents_dir);
+        let Some(dir) = dir else {
+            let syntax = TabManager::detect_syntax(&PathBuf::from(name));
+            self.tabs.new_file(name, syntax);
+            return;
+        };
+        let path = dir.join(name);
+        if path.is_file() {
+            if parent.is_none() && self.file_tree.root.is_none() {
+                self.file_tree.set_root(dir.clone());
+            }
+            self.open_path(path);
+            return;
+        }
+        if path.is_dir() {
+            return;
+        }
+        let _ = std::fs::write(&path, "");
+        if parent.is_none() && self.file_tree.root.is_none() {
+            self.file_tree.set_root(dir.clone());
+        } else {
+            // Reveal the target folder if it isn't the tree root already.
+            if self.file_tree.root.as_deref() != Some(dir.as_path())
+                && !self.file_tree.expanded.contains(&dir)
+            {
+                self.file_tree.expanded.push(dir.clone());
+            }
+            self.file_tree.refresh();
+        }
+        self.open_path(path);
+    }
+
+    /// Create the folder the "New Folder" dialog submitted, under `parent`
+    /// (or the workspace root when None). No-op if it already exists.
+    pub(super) fn create_new_folder(&mut self, name: &str, parent: Option<PathBuf>) {
+        let name = name.trim();
+        let ok = !name.is_empty()
+            && Path::new(name).components().count() == 1
+            && !name.contains(['/', '\\', ':']);
+        if !ok {
+            return;
+        }
+        let root = parent
+            .clone()
+            .or_else(|| self.file_tree.root.clone())
+            .or_else(documents_dir);
+        let Some(root) = root else { return };
+        let path = root.join(name);
+        if path.exists() {
+            self.file_tree.refresh();
+            return;
+        }
+        if std::fs::create_dir(&path).is_err() {
+            return;
+        }
+        // Make the new folder visible right away: expand its parent.
+        if let Some(p) = &parent {
+            if !self.file_tree.expanded.contains(p) {
+                self.file_tree.expanded.push(p.clone());
+            }
+        }
+        self.file_tree.refresh();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remap_under;
+    use std::path::Path;
+
+    #[test]
+    fn remap_under_moves_paths_below_renamed_entry() {
+        let old = Path::new("C:\\proj\\src\\gui");
+        let new = Path::new("C:\\proj\\src\\ui");
+        assert_eq!(
+            remap_under(Path::new("C:\\proj\\src\\gui\\main.rs"), old, new),
+            Some(Path::new("C:\\proj\\src\\ui\\main.rs").to_path_buf())
+        );
+        assert_eq!(
+            remap_under(Path::new("C:\\proj\\src\\gui"), old, new),
+            Some(Path::new("C:\\proj\\src\\ui").to_path_buf())
+        );
+        assert_eq!(
+            remap_under(Path::new("C:\\proj\\src\\core\\x.rs"), old, new),
+            None
+        );
     }
 }

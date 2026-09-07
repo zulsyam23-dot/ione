@@ -19,6 +19,20 @@ impl EditorApp {
                 {
                     commands.push(AppCommand::RefreshFileTree);
                 }
+                if self
+                    .icons
+                    .image_button(ui, Icon::FilePlus, 14.0, "New File")
+                    .clicked()
+                {
+                    commands.push(AppCommand::NewFile);
+                }
+                if self
+                    .icons
+                    .image_button(ui, Icon::FolderPlus, 14.0, "New Folder")
+                    .clicked()
+                {
+                    commands.push(AppCommand::NewFolder(None));
+                }
             });
         });
         ui.add_space(8.0);
@@ -35,14 +49,18 @@ impl EditorApp {
         drag_vertical_splitter(ui, self.palette.border, &mut self.outline_frac, total_h);
 
         ui.allocate_ui(egui::vec2(total_w, outline_h), |ui| {
-            let (content, syntax) = match self.tabs.active_tab() {
-                Some(tab) => (tab.content.clone(), tab.syntax.clone()),
-                None => (String::new(), egui_code_editor::Syntax::new("plain")),
+            // Symbols come from the tab cache (recomputed only on content
+            // change), never re-extracted per frame.
+            let symbols = match self.tabs.active_tab() {
+                Some(tab) => Some(&tab.cache.symbols[..]),
+                None => None,
             };
-            if !content.is_empty() {
-                if let Some(line) = self.outline.show(ui, &self.palette, &content, &syntax) {
-                    if let Some(tab) = self.tabs.active_tab_mut() {
-                        tab.goto_line = Some(line);
+            if let Some(symbols) = symbols {
+                if !symbols.is_empty() {
+                    if let Some(line) = self.outline.show(ui, &self.palette, symbols) {
+                        if let Some(tab) = self.tabs.active_tab_mut() {
+                            tab.goto_line = Some(line);
+                        }
                     }
                 }
             }

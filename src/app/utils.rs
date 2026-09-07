@@ -1,9 +1,22 @@
+use std::path::PathBuf;
+
 use eframe::egui::{self, Color32};
 
 use crate::style::{apply_style, Palette};
 use crate::theme::Theme;
 
 pub(super) const HANDLE: f32 = 6.0;
+
+/// User's Documents dir (creating it if missing), used as the default
+/// workspace so new files & folders always land somewhere predictable.
+pub(super) fn documents_dir() -> Option<PathBuf> {
+    let base = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .ok()?;
+    let dir = PathBuf::from(base).join("Documents");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
 
 pub(super) fn load_logo(ctx: &egui::Context) -> egui::TextureHandle {
     let bytes = include_bytes!("..\\..\\assets\\icons\\app\\1770523897143.ico");
