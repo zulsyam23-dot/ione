@@ -204,6 +204,10 @@ impl eframe::App for EditorApp {
         // Bottom terminal, as a root panel so egui reserves its space natively.
         // (A nested Panel::bottom inside CentralPanel does not shrink the editor's
         // available rect, which is what let the editor content show through/over it.)
+        // Keep the terminal's spawn dir in sync with the workspace root so
+        // new shells open inside the opened folder.
+        self.terminal.cwd = self.file_tree.root.clone();
+
         if self.terminal.visible {
             egui::Panel::bottom("terminal_panel")
                 .resizable(true)

@@ -1,4 +1,5 @@
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -46,6 +47,7 @@ impl Default for TerminalInstance {
 
 pub struct TerminalPanel {
     pub visible: bool,
+    pub cwd: Option<PathBuf>,
     sessions: Vec<TerminalInstance>,
     pub active: usize,
     focused: bool,
@@ -55,6 +57,7 @@ impl Default for TerminalPanel {
     fn default() -> Self {
         Self {
             visible: false,
+            cwd: None,
             sessions: vec![TerminalInstance::default()],
             active: 0,
             focused: false,
@@ -94,14 +97,21 @@ impl TerminalPanel {
 
         // PowerShell 7 ships as pwsh; Windows PowerShell (5.1) as powershell.
         // Prefer pwsh but fall back so stripped installs still get a shell.
+        // Spawn inside the workspace root so the shell starts where the user works.
         let mut cmd = CommandBuilder::new("pwsh");
         cmd.arg("-NoProfile");
+        if let Some(dir) = &self.cwd {
+            cmd.cwd(dir);
+        }
         let child = match pair
             .slave
             .spawn_command(cmd)
             .or_else(|_| {
                 let mut fb = CommandBuilder::new("powershell");
                 fb.arg("-NoProfile");
+                if let Some(dir) = &self.cwd {
+                    fb.cwd(dir);
+                }
                 pair.slave.spawn_command(fb)
             })
         {

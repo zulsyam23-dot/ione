@@ -2,6 +2,9 @@
 name = "ione"
 version = "0.1.0"
 edition = "2024"
+description = "ione - lightweight code editor with an integrated PowerShell terminal"
+authors = ["Zulkarnaen Syam Amansyah"]
+license = "MIT"
 
 [dependencies]
 eframe = "0.36"

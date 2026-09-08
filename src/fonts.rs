@@ -11,6 +11,15 @@ pub const FONTS: &[(&str, &str)] = &[
 ];
 
 fn font_dir() -> PathBuf {
+    // Installed layout: the MSI puts `assets/fonts` next to the executable.
+    // Fall back to the source tree while developing.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent().map(|p| p.join("assets").join("fonts")) {
+            if dir.is_dir() {
+                return dir;
+            }
+        }
+    }
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("assets")
         .join("fonts")
