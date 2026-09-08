@@ -6,3 +6,8 @@
 # logs
 *.log
 run_err.log
+
+# cargo-wix installer artifacts (building is a one-shot step, not repo content)
+/wix/
+/*.wxs
+/0

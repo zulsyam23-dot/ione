@@ -234,8 +234,6 @@ impl FileTree {
                 } else {
                     clicked_path = Some(entry.path.clone());
                 }
-            } else if row_resp.secondary_clicked() && entry.is_dir {
-                toggle_path = Some(entry.path.clone());
             }
             row_resp.context_menu(|ui| {
                 if entry.is_dir {

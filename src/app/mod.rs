@@ -223,6 +223,15 @@ impl eframe::App for EditorApp {
                             if ui.small_button("×").on_hover_text("Close").clicked() {
                                 commands.push(AppCommand::ToggleTerminal);
                             }
+                            if ui
+                                .small_button("Copy")
+                                .on_hover_text("Copy selection")
+                                .clicked()
+                            {
+                                if let Some(text) = self.terminal.copy_selection() {
+                                    ctx.copy_text(text);
+                                }
+                            }
                         });
                     });
                     self.terminal.show(ui, &self.palette, &ctx);

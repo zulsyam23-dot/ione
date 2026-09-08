@@ -403,11 +403,21 @@ pub fn show_editor(
                                         )
                                     })
                                 });
+                                // The popup must only react to typing inside the
+                                // editor itself. Without this guard, a word char
+                                // typed in the Find box / rename dialog / terminal
+                                // would be seen here too and pop a suggestion
+                                // popup "on its own" at the editor's caret.
+                                let focused_editor = ui.ctx().memory(|m| {
+                                    m.focused()
+                                        .is_some_and(|f| f == egui::Id::new(&editor_id))
+                                });
                                 match &mut tab.completion {
                                     None => {
-                                        if just_typed_word
+                                        if focused_editor
+                                            && just_typed_word
                                             && completion::next_char_allows(next)
-                                            && !prefix.is_empty()
+                                            && prefix.chars().count() >= 2
                                         {
                                             let syms = &tab.cache.symbols;
                                             let items = completion::build_items(
@@ -427,7 +437,8 @@ pub fn show_editor(
                                         }
                                     }
                                     Some(st) => {
-                                        if !completion::next_char_allows(next)
+                                        if !focused_editor
+                                            || !completion::next_char_allows(next)
                                             || prefix.is_empty()
                                             || tab.multi.is_some()
                                         {

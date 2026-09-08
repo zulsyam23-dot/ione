@@ -77,7 +77,7 @@ pub fn draw_editor_overlays(
         // force repaints mid-fade. Keying the animator id by the pair's open
         // index makes every pair change restart the ramp instead of leaving
         // the previous pair's high value in place.
-        const FADE: f32 = 1.2;
+        const FADE: f32 = 0.3;
         let fade_id = Id::new(("active_guide_fade", editor_id));
         let last_open = ui
             .ctx()
