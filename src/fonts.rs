@@ -1,6 +1,19 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use eframe::egui;
+
+/// Bumped each time the active font changes. Cached text galleys depend on
+/// the font set, so any galley-cache key must include this generation.
+static FONT_GEN: AtomicU64 = AtomicU64::new(0);
+
+pub fn bump_font_gen() {
+    FONT_GEN.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn font_generation() -> u64 {
+    FONT_GEN.load(Ordering::Relaxed)
+}
 
 pub const FONTS: &[(&str, &str)] = &[
     ("JetBrains Mono", "JetBrainsMono-Regular.ttf"),
@@ -56,6 +69,7 @@ pub fn apply_font(ctx: &egui::Context, name: &str) -> Result<(), String> {
         list.insert(0, "ione_code_font".to_owned());
     }
     ctx.set_fonts(fonts);
+    bump_font_gen();
     Ok(())
 }
 

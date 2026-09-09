@@ -7,23 +7,24 @@ use egui::text::{CCursor, CharIndex};
 
 use crate::guides::Pair;
 
-pub(crate) fn char_count(galley: &egui::Galley) -> usize {
-    galley.chars().count()
-}
-
 /// Screen rectangle of the char at `idx` (0-width column + full row height).
+/// Every caller derives `idx` from a `FoldView::d2r`/scan index, which is
+/// always `< display_char_count`, so the clamp was pure waste; only `multi`
+/// passes `de + 1` == end (valid for `pos_from_cursor`).
 pub(crate) fn char_rect(galley: &egui::Galley, origin: Pos2, idx: usize) -> Rect {
+    debug_assert!(idx <= galley.chars().count());
     let r = galley.pos_from_cursor(CCursor {
-        index: CharIndex(idx.min(char_count(galley))),
+        index: CharIndex(idx),
         prefer_next_row: false,
     });
     r.translate(origin.to_vec2())
 }
 
 pub(crate) fn char_line(galley: &egui::Galley, idx: usize) -> usize {
+    debug_assert!(idx <= galley.chars().count());
     galley
         .layout_from_cursor(CCursor {
-            index: CharIndex(idx.min(char_count(galley))),
+            index: CharIndex(idx),
             prefer_next_row: false,
         })
         .row

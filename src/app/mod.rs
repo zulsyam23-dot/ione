@@ -30,6 +30,8 @@ pub enum AppCommand {
     OpenFilePath(PathBuf),
     OpenFolder,
     SetRoot(PathBuf),
+    OpenRecent(PathBuf),
+    QuickOpen,
     RenamePath(PathBuf),
     DeletePath(PathBuf),
     CopyPath(PathBuf),
@@ -80,6 +82,18 @@ pub struct EditorApp {
     pub editor_font: String,
     pub font_msg: Option<(String, Instant)>,
     pub pending_theme: Option<Theme>,
+    /// Lightweight "open file" palette (Ctrl+P), open when `Some`.
+    pub quick_open: Option<QuickOpen>,
+    pub recent_files: Vec<PathBuf>,
+    pub settings: crate::settings::Settings,
+    pub settings_applied: bool,
+}
+
+/// The Ctrl+P file palette: live query + selection over the workspace files.
+pub struct QuickOpen {
+    pub query: String,
+    pub selected: usize,
+    pub paths: Vec<PathBuf>,
 }
 
 pub struct RenameState {
@@ -126,6 +140,10 @@ impl Default for EditorApp {
             editor_font: "JetBrains Mono".to_string(),
             font_msg: None,
             pending_theme: None,
+            quick_open: None,
+            recent_files: Vec::new(),
+            settings: crate::settings::Settings::default(),
+            settings_applied: false,
         }
     }
 }
@@ -133,6 +151,23 @@ impl Default for EditorApp {
 impl EditorApp {
     pub fn new() -> Self {
         let mut app = Self::default();
+        // Persisted preferences (theme/font) and the recent-files list.
+        let loaded = crate::settings::load();
+        app.settings = crate::settings::Settings {
+            theme: loaded.theme.clone(),
+            font: loaded.font.clone(),
+        };
+        if let Some(t) = &loaded.theme {
+            if let Some(theme) = crate::theme::Theme::ALL.iter().find(|x| x.name() == t) {
+                app.theme = *theme;
+            }
+        }
+        if let Some(f) = &loaded.font {
+            if crate::fonts::FONTS.iter().any(|(n, _)| n == f) {
+                app.editor_font = f.clone();
+            }
+        }
+        app.recent_files = crate::settings::load_recents();
         // Default workspace = the user's Documents, so new files/folders are
         // easy to find instead of living in an invisible in-memory state.
         if let Some(docs) = utils::documents_dir() {
@@ -148,6 +183,103 @@ impl EditorApp {
         EditorOverlay {
             bracket_guides: self.bracket_guides,
             colorize_brackets: self.colorize_brackets,
+        }
+    }
+
+    /// Ctrl+P file palette: a top-centered window with a query box and the
+    /// workspace files. Enter/↑/↓/Esc are read from the raw events (the
+    /// single-line box consumes Enter as "done"), and a click opens too.
+    fn show_quick_open(&mut self, ctx: &egui::Context, commands: &mut Vec<AppCommand>) {
+        let Some(q) = &mut self.quick_open else { return };
+        let root = self.file_tree.root.clone();
+        let (esc, enter, up, down) = ctx.input(|i| {
+            let mut r = (false, false, false, false);
+            for e in &i.events {
+                if let egui::Event::Key {
+                    key,
+                    pressed: true,
+                    repeat: false,
+                    ..
+                } = e
+                {
+                    match key {
+                        egui::Key::Escape => r.0 = true,
+                        egui::Key::Enter => r.1 = true,
+                        egui::Key::ArrowUp => r.2 = true,
+                        egui::Key::ArrowDown => r.3 = true,
+                        _ => {}
+                    }
+                }
+            }
+            r
+        });
+        let mut chose: Option<PathBuf> = None;
+        egui::Window::new("Quick Open (Ctrl+P)")
+            .collapsible(false)
+            .resizable(false)
+            .default_width(520.0)
+            .anchor(egui::Align2::CENTER_TOP, [0.0, 40.0])
+            .show(ctx, |ui| {
+                if up {
+                    q.selected = q.selected.saturating_sub(1);
+                }
+                if down {
+                    q.selected = q.selected.saturating_add(1);
+                }
+                let query = q.query.to_lowercase();
+                let matches: Vec<&PathBuf> = q
+                    .paths
+                    .iter()
+                    .filter(|p| {
+                        query.is_empty()
+                            || p
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_lowercase()
+                                .contains(&query)
+                    })
+                    .collect();
+                if q.selected >= matches.len() {
+                    q.selected = 0;
+                }
+                let resp = ui.add(
+                    egui::TextEdit::singleline(&mut q.query)
+                        .hint_text("Type a file name to open…")
+                        .desired_width(f32::INFINITY),
+                );
+                if !resp.has_focus() {
+                    resp.request_focus();
+                }
+                if enter && !matches.is_empty() {
+                    let sel = q.selected.min(matches.len() - 1);
+                    chose = Some(matches[sel].clone());
+                }
+                ui.separator();
+                egui::ScrollArea::vertical()
+                    .max_height(360.0)
+                    .id_salt("quick_open_scroll")
+                    .show(ui, |ui| {
+                        if matches.is_empty() {
+                            ui.label("No files — open a folder first (Ctrl+K Ctrl+O).");
+                        }
+                        for (i, p) in matches.iter().take(300).enumerate() {
+                            let rel = root
+                                .as_ref()
+                                .and_then(|r| p.strip_prefix(r).ok())
+                                .map(|rp| rp.to_string_lossy().to_string())
+                                .unwrap_or_else(|| p.to_string_lossy().to_string());
+                            if ui.selectable_label(q.selected == i, rel).clicked() {
+                                chose = Some((*p).clone());
+                            }
+                        }
+                    });
+            });
+        if esc {
+            self.quick_open = None;
+        } else if let Some(p) = chose {
+            commands.push(AppCommand::OpenRecent(p));
+            self.quick_open = None;
         }
     }
 }
@@ -166,6 +298,22 @@ impl eframe::App for EditorApp {
                 }
                 return;
             }
+        }
+
+        // Editor-area splash is visual only: shed every input event for its
+        // duration so nothing (typing, shortcuts, clicks) lands behind the veil.
+        if self.loading.is_some() {
+            ctx.input_mut(|i| i.events.clear());
+        }
+
+        // Apply the persisted theme/font on the first usable frame (egui's
+        // visuals are set up before the app runs, so this overrides them).
+        if !self.settings_applied {
+            self.settings_applied = true;
+            if self.editor_font != "JetBrains Mono" {
+                let _ = crate::fonts::apply_font(&ctx, &self.editor_font);
+            }
+            utils::apply_egui_theme(&ctx, self.theme);
         }
 
         self.palette = if self.theme.is_dark() {
@@ -270,10 +418,10 @@ impl eframe::App for EditorApp {
                 }
 
                 // Editor-area splash while a heavy file is being opened.
-                if let Some((ov, t0)) = &mut self.loading {
+                if let Some((ov, _)) = &mut self.loading {
                     if !ov.fullscreen {
                         ov.show(&ctx, Some(ui.max_rect()));
-                        if t0.elapsed() >= Duration::from_millis(600) {
+                        if ov.done(Duration::from_millis(600)) {
                             self.loading = None;
                         }
                     }
@@ -284,6 +432,7 @@ impl eframe::App for EditorApp {
         self.show_rename_window(&ctx);
         self.show_new_file_window(&ctx);
         self.show_theme_confirm(&ctx, &mut commands);
+        self.show_quick_open(&ctx, &mut commands);
 
         // Persistent divider at the explorer's right edge, painted last so no
         // panel content (tree rows, scrollbars) can ever cover it.

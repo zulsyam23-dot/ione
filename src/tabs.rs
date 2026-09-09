@@ -52,12 +52,27 @@ pub struct TabCache {
     pub diagnostics: Vec<crate::diagnostics::Diagnostic>,
     pub symbols: Vec<crate::outline::Symbol>,
     pub scan: BracketScan,
+    /// String/comment char mask (`true` = inside a string/comment), shared
+    /// with auto-close and bracket logic without re-lexing.
+    pub mask: Vec<bool>,
     pub fold_opens: Vec<usize>,
     /// Fold view keyed on `(content hash, fold fingerprint, view)`.
     pub fold_view_cache: Option<(u64, u64, crate::editor::folds::FoldView)>,
     /// Style key covering theme/overlay/palette/syntax for the mask+links.
     pub style_key: u64,
-    pub job_cache: Option<(u64, u64, eframe::egui::text::LayoutJob, Links, crate::editor::styling::Styled)>,
+    /// Cached editor galley: `(style_key, text_hash, font_generation,
+    /// pixels_per_point_bits, galley, links, styled)`. Replaying the identical
+    /// galley (Arc clone) on later frames skips the LayoutJob clone +
+    /// re-layout that used to run per frame.
+    pub job_cache: Option<(
+        u64,
+        u64,
+        u64,
+        u32,
+        std::sync::Arc<eframe::egui::Galley>,
+        Links,
+        crate::editor::styling::Styled,
+    )>,
 }
 
 impl Default for TabCache {
@@ -66,6 +81,7 @@ impl Default for TabCache {
             diagnostics: Vec::new(),
             symbols: Vec::new(),
             scan: BracketScan::default(),
+            mask: Vec::new(),
             fold_opens: Vec::new(),
             fold_view_cache: None,
             style_key: 0,
@@ -131,34 +147,37 @@ impl Tab {
 
     /// Recompute the per-character cached artifacts (`cache`) only when the
     /// content hash or the active style changed. Runs once per frame at most;
-    /// no-op on idle frames.
+    /// no-op on idle frames. Returns the content hash so callers skip their
+    /// own O(content) scan.
     pub fn refresh_cache(
         &mut self,
         theme: crate::theme::Theme,
         editor_bg: &'static str,
         overlay: &crate::guides::EditorOverlay,
         palette: &crate::style::Palette,
-    ) {
+    ) -> u64 {
         let mut color_theme = theme.to_color_theme();
         color_theme.bg = editor_bg;
         let style_key = crate::editor::styling::style_key(&color_theme, overlay, palette, &self.syntax);
         let hash = crate::diagnostics::hash_content(&self.content);
         if hash == self.diag_hash && self.cache.style_key == style_key {
-            return;
+            return hash;
         }
-        let (d, scan) = crate::diagnostics::analyze_with_scan(&self.content, &self.syntax);
+        let (d, scan, mask) = crate::diagnostics::analyze_with_scan(&self.content, &self.syntax);
         let symbols = crate::outline::extract_symbols(&self.content, &self.syntax);
         let fold_opens = crate::editor::folds::foldable_opens(&self.content, &scan.brace_pairs);
         self.cache = TabCache {
             diagnostics: d,
             symbols,
             scan,
+            mask,
             fold_opens,
             fold_view_cache: None,
             style_key,
             job_cache: None,
         };
         self.diag_hash = hash;
+        hash
     }
 }
 

@@ -1,7 +1,7 @@
-# ione — Penjelasan Fitur
+# ione — Fitur yang Sudah Diimplementasikan
 
 > Editor kode modern berbasis **Rust + egui/eframe** dengan terminal PowerShell terintegrasi.
-> Dokumen ini menjelaskan fitur yang **saat ini tersedia**, lengkap dengan kelebihan dan kekurangannya.
+> Dokumen ini hanya mencatat fitur yang **saat ini tersedia**. Fitur yang belum ada / rencana update dicatat di **[`fitur-up.md`](fitur-up.md)**.
 
 ---
 
@@ -10,8 +10,7 @@
 - [Cara Membuka](#cara-membuka)
 - [Fitur Utama](#fitur-utama)
 - [Kelebihan](#kelebihan)
-- [Kekurangan](#kekurangan)
-- [Roadmap / Rencana Perbaikan](#roadmap)
+- [Catatan](#catatan)
 
 ---
 
@@ -22,6 +21,8 @@
 | Buka file | File → Open... | `Ctrl+O` |
 | Buka folder | File → Open Folder... | `Ctrl+K Ctrl+O` |
 | File baru | File → New File | `Ctrl+N` |
+| Quick open | File → Quick Open | `Ctrl+P` |
+| Buka file terakhir | File → Open Recent (10 terakhir) | — |
 | Simpan | File → Save | `Ctrl+S` |
 | Simpan sebagai | File → Save As... | `Ctrl+Shift+S` |
 | Tutup tab | File → Close Tab | `Ctrl+W` |
@@ -33,7 +34,7 @@
 ### 📝 Editor Multi-Tab
 - Buka banyak file sekaligus dalam tab.
 - **Syntax highlighting** untuk banyak bahasa (Rust, Python, JS/TS, HTML/CSS, JSON, TOML, YAML, Markdown, Lua, Shell, SQL, C, dan lainnya).
-- **Nomor baris**, **undo/redo**, **clickable links**.
+- **Nomor baris**, **undo/redo** (kursor tunggal, bawaan egui), **clickable links**.
 - Status bar menampilkan posisi kursor (baris & kolom).
 - Beralih tab cepat dengan `Ctrl+Tab` / `Ctrl+Shift+Tab`.
 - Tutup tab dengan **klik tengah** atau **klik kanan → Close** (sama seperti terminal).
@@ -73,6 +74,29 @@
 - Lalu **satu ketikan/backspace/delete/tab dipakai di semua lokasi sekaligus**.
 - Klik / tombol panah / Home / End membatalkan mode.
 - Overlay highlight biru transparan menandai rentang terpilih.
+
+### ⌨️ Pengetikan Cepat
+- **Auto-close pasangan**: `(` → `()`, `[` → `[]`, `{` → `{}`, `"` → `""`, `'` → `''`, `` ` `` → backtick tersambung — kursor langsung berada **di dalam** pasangan.
+- **Auto-indent**: `Enter` membawa indentasi (whitespace) baris sebelumnya ke baris baru.
+- Cerdas konteks: kedua hal di atas **dilewati** saat kursor berada di dalam string/komentar atau bersebelahan dengan karakter kata, dan tidak aktif saat ada seleksi / mode multi-cursor.
+- **Operasi baris** (buffernya tetap utuh):
+  - `Ctrl+/` — toggle komentar baris (`//`; `#` untuk CSV/terminal), sekaligus untuk seleksi multi-baris, baris kosong dilewati.
+  - `Ctrl+Shift+D` — duplikat baris (kursor ikut ke salinan).
+  - `Ctrl+Shift+K` — hapus baris.
+  - `Alt+↑` / `Alt+↓` — pindahkan baris ke atas/bawah.
+- **Pengingat**: fitur di atas menargetkan kursor tunggal; mode multi-cursor (`Ctrl+D`) tidak dijinakkan olehnya.
+
+### ⚙️ Pengaturan Persisten
+- **Tema & font editor tersimpan antar sesi** di `%APPDATA%\ione\settings.txt` dan diterapkan otomatis saat aplikasi dibuka.
+- **Daftar recent files** (10 terakhir) tersimpan di `%APPDATA%\ione\recent.txt`, tampil di **File → Open Recent**, dan ter-update setiap kali membuka file (via Ctrl+P atau explorer).
+
+### ✨ Auto-Complete
+- Saran muncul saat mengetik, dari 3 sumber lokal:
+  - **Kata kunci** syntax bahasa aktif (mis. `fn`, `let`, `return` untuk Rust).
+  - **Simbol** dari outline file aktif — dengan petunjuk parameter untuk fungsi (signature hint).
+  - **Identifier** yang pernah dipakai di file itu sendiri.
+- Selesai tanpa proses eksternal (offline, tanpa LSP).
+- Modus multi-cursor berjalan bersama auto-complete tanpa konflik.
 
 ### 🛑 Error/Warning Decoration
 - Deteksi bawaan (tanpa proses eksternal, offline):
@@ -121,29 +145,10 @@
 
 ---
 
-## Kekurangan
+## Catatan
 
-- ⚠️ **Belum ada auto-complete / IntelliSense** di editor (kecuali melalui terminal).
-- ⚠️ **Belum ada debugger, git panel, atau integrasi build/run moderen**.
-- ⚠️ **Manajemen proyek masih dasar**: belum ada "workspace" multi-root atau pengaturan per-proyek.
-- ⚠️ **Roboto Mono** hanya satu varian (Regular) karena format variable font.
-- ⚠️ **Belum ada pengaturan/prference tersimpan** (misal font & tema pilihan belum dipertahankan antar sesi).
-- ⚠️ **Belum ada minimap, breadcrumb, atau inlay hints (type info inline)**.
-- ⚠️ **Terminal belum mendukung beberapa fitur lanjutan** (misal drag-drop file ke terminal).
-
----
-
-## Roadmap
-
-| Prioritas | Rencana |
-|-----------|---------|
-| 🥇 | Simpan pengaturan (font, tema, ukuran) agar persisten |
-| 🥇 | Auto-complete dasar untuk bahasa populer |
-| 🥈 | Panel Git (status, commit, staging) |
-| 🥈 | Persist daftar file yang baru dibuka (recent files) |
-| 🥉 | Minimap & breadcrumb |
-| 🥉 | Integrasi build/run dengan output terarah ke terminal |
-| 🥉 | Diagnostik eksternal (`cargo check` / LSP) di samping cek bawaan |
+- Dokumen ini hanya mencatat fitur yang **sudah diimplementasikan**.
+- Fitur yang **belum ada** (kekurangan) dan **rencana update**: lihat **[`fitur-up.md`](fitur-up.md)**.
 
 ---
 

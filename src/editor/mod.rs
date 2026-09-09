@@ -9,32 +9,40 @@
 //! - `gutter` — line-number gutter widget.
 //! - `cursor` — pure text-position math (goto line, line/col tracking).
 //! - `links` — clickable hyperlink resolution drawn on top of the text.
+//! - `folds` — fold view/buffer, foldable-opens, and folded-pair suppression.
+//! - `multi` — multi-cursor batch edits over the real buffer.
+//! - `ops` — whole-line buffer operations (comment, duplicate, move, delete).
+//! - `input` — pre-frame event processing (multi claim, completion, typing).
+//! - `popup` — the auto-complete suggestion popup rendering.
 
 use std::cell::RefCell;
 
 use eframe::egui::{self, Event, Ui};
 use egui::text::CCursor;
+use egui::text::CCursorRange;
 use egui::widgets::text_edit::TextEditOutput;
 use egui_code_editor::highlighting::Links;
 
 use crate::completion::{self, CompletionState};
-use crate::guides::{draw_editor_overlays, BracketScan, EditorOverlay};
+use crate::guides::{draw_editor_overlays, EditorOverlay};
 use crate::icons::Icons;
 use crate::style::Palette;
 use crate::tabs::Tab;
 use crate::theme::Theme;
 
-use egui_code_editor::{ColorTheme, TokenType};
-
 use self::folds::FoldView;
+use self::input::LineOp;
 
 pub(crate) mod cursor;
 pub(crate) mod folds;
 pub(crate) mod gutter;
 
+pub(crate) mod input;
 pub(crate) mod lexer;
 pub(crate) mod links;
 pub(crate) mod multi;
+pub(crate) mod ops;
+pub(crate) mod popup;
 pub(crate) mod styling;
 
 pub(crate) const FONT_SIZE: f32 = 14.0;
@@ -63,7 +71,7 @@ pub fn show_editor(
     // Everything derived from the content (diagnostics, symbols, mask+links,
     // bracket scan, fold targets) lives in `tab.cache` and is recomputed once
     // per content/style change, not every frame (see `Tab::refresh_cache`).
-    tab.refresh_cache(theme, editor_bg, overlay, palette);
+    let content_hash0 = tab.refresh_cache(theme, editor_bg, overlay, palette);
 
     // Real-content structure: prunes stale folds, lists foldable rows, and
     // lets guides suppress pairs whose match is hidden behind a fold.
@@ -78,131 +86,12 @@ pub fn show_editor(
 
     tab.folds.retain(|f| valid.contains(&f.open));
 
-    // Multi-select batch edit: while a multi-select is active, a single
-    // keystroke edits every range at once. Only that one event is consumed
-    // (egui's single-cursor TextEdit must not apply it twice); any click or
-    // arrow key cancels the mode and passes through normally. After the edit
-    // the carets move to the end of each change so further typing appends.
-    if let Some(ref multi) = tab.multi.clone() {
-        let focus_ok = ui
-            .ctx()
-            .memory(|m| m.focused().is_some_and(|f| f == egui::Id::new(&editor_id)));
-        let mut edit: Option<multi::Edit> = None;
-        if focus_ok {
-            edit = ui.ctx().input_mut(|i| {
-                for (n, ev) in i.events.iter().enumerate() {
-                    if matches!(
-                        ev,
-                        Event::PointerButton { pressed: true, .. }
-                            | Event::Key { key: egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::Home | egui::Key::End, pressed: true, .. }
-                    ) {
-                        tab.multi = None;
-                        return None;
-                    }
-                    if multi::is_batchable(ev) {
-                        let e = match ev {
-                            Event::Text(t) => multi::Edit::Insert(t.clone()),
-                            Event::Key { key: egui::Key::Backspace, .. } => multi::Edit::Backspace,
-                            Event::Key { key: egui::Key::Delete, .. } => multi::Edit::Delete,
-                            Event::Key { key: egui::Key::Enter, .. } => multi::Edit::Enter,
-                            Event::Key { key: egui::Key::Tab, .. } => multi::Edit::InsertTab,
-                            _ => unreachable!(),
-                        };
-                        i.events.remove(n);
-                        return Some(e);
-                    }
-                }
-                None
-            });
-        }
-        if let Some(edit) = edit {
-            let ranges = multi.ranges.clone();
-            if let Some(carets) = multi::apply_edit(&mut tab.content, &ranges, &edit) {
-                tab.dirty = true;
-                if let Some(m) = &mut tab.multi {
-                    m.ranges = carets;
-                }
-            }
-        }
-    }
-
-    // Autocomplete: while the popup is open, pick/accept/close keys are claimed
-    // here so TextEdit never sees them — ↑/↓ must not move the caret while a
-    // suggestion is being selected, Enter/Tab must not insert a newline/tab,
-    // Esc must not leak to the app menu. Click and caret moves close it too.
-    // Mutually exclusive with the multi-select claim on the same keys above.
-    if tab.multi.is_none() {
-        let focus_ok = ui
-            .ctx()
-            .memory(|m| m.focused().is_some_and(|f| f == egui::Id::new(&editor_id)));
-        let action = if focus_ok && tab.completion.as_ref().is_some_and(|c| !c.items.is_empty()) {
-            ui.ctx().input_mut(|i| {
-                for (n, ev) in i.events.iter().enumerate() {
-                    let take = match ev {
-                        Event::Key { key: egui::Key::ArrowUp, pressed: true, .. } => Some(completion::Action::Prev),
-                        Event::Key { key: egui::Key::ArrowDown, pressed: true, .. } => Some(completion::Action::Next),
-                        Event::Key {
-                            key: egui::Key::Enter | egui::Key::Tab,
-                            pressed: true,
-                            repeat: false,
-                            ..
-                        } => Some(completion::Action::Accept),
-                        Event::Key { key: egui::Key::Escape, pressed: true, repeat: false, .. } => {
-                            Some(completion::Action::Close)
-                        }
-                        Event::Key {
-                            key:
-                                egui::Key::ArrowLeft
-                                | egui::Key::ArrowRight
-                                | egui::Key::Home
-                                | egui::Key::End,
-                            pressed: true,
-                            ..
-                        }
-                        | Event::PointerButton { pressed: true, .. } => Some(completion::Action::Close),
-                        _ => None,
-                    };
-                    if let Some(a) = take {
-                        i.events.remove(n);
-                        return Some(a);
-                    }
-                }
-                None
-            })
-        } else {
-            None
-        };
-        let next = action
-            .as_ref()
-            .is_some_and(|a| matches!(a, completion::Action::Next));
-        match action {
-            Some(completion::Action::Prev) | Some(completion::Action::Next) => {
-                if let Some(st) = &mut tab.completion {
-                    let n = st.items.len();
-                    if n > 1 {
-                        st.selected = if next {
-                            (st.selected + 1) % n
-                        } else {
-                            (st.selected + n - 1) % n
-                        };
-                    }
-                }
-            }
-            Some(completion::Action::Accept) => {
-                if let Some(st) = tab.completion.take() {
-                    if let Some(item) = st.items.get(st.selected) {
-                        let tail = item.tail.clone();
-                        tab.dirty = true;
-                        // Spliced into this frame's events: TextEdit pastes the
-                        // tail at the caret, completing the word on the spot.
-                        ui.ctx().input_mut(|i| i.events.push(Event::Paste(tail)));
-                    }
-                }
-            }
-            Some(completion::Action::Close) => tab.completion = None,
-            None => {}
-        }
-    }
+    // Input preprocessing (mutually exclusive, in order): multi-select batch
+    // edit, autocomplete pick/accept, then the typing helpers (auto-close,
+    // auto-indent, line ops). See `input`.
+    input::handle_multi_claim(ui, &editor_id, tab);
+    input::handle_completion_claim(ui, &editor_id, tab);
+    let (pending_wrap, pending_lineop) = input::text_editing_pass(ui, &editor_id, tab);
 
     // Only well-formed `{ ... }` blocks are fold targets — inline expression
     // braces and multi-line literals (`Foo {\n …\n};`) must not fold. The
@@ -227,7 +116,6 @@ pub fn show_editor(
     // fold view changes only when the content or the fold set does, so idle
     // frames clone the cached one instead of re-laying the whole file, and the
     // `FoldBuffer` reuses it instead of building the file a second time.
-    let content_hash0 = crate::diagnostics::hash_content(&tab.content);
     let fold_fp = folds::fold_fp(&tab.folds);
     let view0 = if tab
         .cache
@@ -247,9 +135,13 @@ pub fn show_editor(
     // Gutter markers: display rows with a diagnostic, error winning the color.
     let mut diag_rows: Vec<(usize, crate::diagnostics::Severity)> = Vec::new();
     if !tab.cache.diagnostics.is_empty() {
+        // ponytail: was line_of_char(d.start) per diag → O(diags×content) per
+        // frame. One scan, O(log n) lookups.
+        let starts = folds::line_starts_of(&tab.content);
+        let line_of_char = |ci: usize| starts.partition_point(|&s| s <= ci).saturating_sub(1);
         let mut rows: Vec<(usize, crate::diagnostics::Severity)> = Vec::new();
         for d in &tab.cache.diagnostics {
-            let real_line = crate::diagnostics::line_of_char(&tab.content, d.start);
+            let real_line = line_of_char(d.start);
             if let Some(row) = view0.display_row_of(real_line) {
                 rows.push((row, d.severity));
             }
@@ -263,6 +155,11 @@ pub fn show_editor(
     // (links, styled) from the latest layouter run, which is the exact galley.
     let styled = RefCell::new(None::<(Links, styling::Styled)>);
     let fold_view = RefCell::new(None::<FoldView>);
+    // Folds are final for this frame now (toggle/unfold already ran): when
+    // empty, the fold buffer equals the real content, so the galley hash can
+    // reuse `content_hash0` instead of re-scanning. Hoisted out of the
+    // layouter closure to keep the borrows disjoint.
+    let folds_empty = tab.folds.is_empty();
 
     let code_editor = |ui: &mut Ui| {
         let frame = egui::Frame::new().fill(color_theme.bg());
@@ -280,28 +177,42 @@ pub fn show_editor(
                     .id_salt(format!("{editor_id}_inner_scroll"))
                     .show(h, |ui| {
                         // Layouter with a per-frame job memo: a layouter call
-                        // whose buffer text hash and style key match the last
-                        // call replays the cached colored `LayoutJob` (and works
-                        // without re-lexing). egui's own galley cache only lasts
-                        // one frame, so the expensive part we skip here is the
-                        // lexer + mask + bracket scan + LayoutJob construction.
+                        // whose buffer text hash, style key, and font
+                        // generation match the last call replays the cached
+                        // galley (an Arc clone — no re-lex, no `LayoutJob`
+                        // clone, no `fonts.layout_job`). The no-wrap editor
+                        // makes the galley viewport-independent, so replaying
+                        // it is always correct. egui's own galley cache only
+                        // lasts one frame, so the expensive parts we skip here
+                        // are the lexer + mask + bracket scan + LayoutJob
+                        // construction + full-file clone and layout.
                         let mut layouter =
                             |ui: &Ui, text_buffer: &dyn egui::TextBuffer, _wrap_width: f32| {
-                                let text_hash =
-                                    crate::diagnostics::hash_content(text_buffer.as_str());
+                                // Unfolded buffers match the real content, whose
+                                // hash `refresh_cache` already computed.
+                                let text_hash = if folds_empty {
+                                    content_hash0
+                                } else {
+                                    crate::diagnostics::hash_content(text_buffer.as_str())
+                                };
+                                let font_gen = crate::fonts::font_generation();
+                                let ppp = ui.ctx().pixels_per_point().to_bits();
                                 let cache_key = tab.cache.style_key;
                                 if tab
                                     .cache
                                     .job_cache
                                     .as_ref()
-                                    .is_some_and(|(sk, h, _, _, _)| *sk == cache_key && *h == text_hash)
+                                    .is_some_and(|(sk, h, fg, pp, _, _, _)| {
+                                        *sk == cache_key
+                                            && *h == text_hash
+                                            && *fg == font_gen
+                                            && *pp == ppp
+                                    })
                                 {
-                                    let (_, _, job, links_, s) =
+                                    let (_, _, _, _, galley, links_, s) =
                                         tab.cache.job_cache.as_ref().expect("checked above");
-                                    // `links`/scan match this frame's galley
-                                    // (same text), so reuse them as-is.
                                     let _ = styled.replace(Some((links_.clone(), s.clone())));
-                                    return ui.fonts_mut(|fonts| fonts.layout_job(job.clone()));
+                                    return galley.clone();
                                 }
                                 let (job, links_, styled_) = styling::layout_styled(
                                     text_buffer.as_str(),
@@ -311,9 +222,16 @@ pub fn show_editor(
                                     palette,
                                 );
                                 let _ = styled.replace(Some((links_.clone(), styled_.clone())));
-                                let galley = ui.fonts_mut(|fonts| fonts.layout_job(job.clone()));
-                                tab.cache.job_cache =
-                                    Some((cache_key, text_hash, job, links_, styled_));
+                                let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+                                tab.cache.job_cache = Some((
+                                    cache_key,
+                                    text_hash,
+                                    font_gen,
+                                    ppp,
+                                    galley.clone(),
+                                    links_,
+                                    styled_,
+                                ));
                                 galley
                             };
 
@@ -351,7 +269,7 @@ pub fn show_editor(
                         if let Some((links_, s)) = styled.borrow().as_ref() {
                             links::handle_links(&output, links_);
                             let scan =
-                                suppress_folded_pairs(&s.scan, &tab.cache.scan, &buffer_view);
+                                folds::suppress_folded_pairs(&s.scan, &tab.cache.scan, &buffer_view);
                             draw_editor_overlays(
                                 ui,
                                 &editor_id,
@@ -463,7 +381,7 @@ pub fn show_editor(
                                         output.galley.pos_from_cursor(range.primary);
                                     let anchor =
                                         output.galley_pos + cursor_rect.min.to_vec2();
-                                    draw_completion_popup(ui, anchor, st, palette, &color_theme);
+                                    popup::draw_completion_popup(ui, anchor, st, palette, &color_theme);
                                 }
                             }
                         }
@@ -486,10 +404,60 @@ pub fn show_editor(
         return;
     };
 
+    // Auto-close: the pair landed with the caret past the closing char
+    // (`(` → `()|`); step it back inside the pair.
+    let mut cursor_stored = false;
+    if pending_wrap.is_some() {
+        if let Some(range) = output.cursor_range {
+            let idx = range.primary.index.0;
+            if idx > 0 {
+                let new_range = CCursorRange::one(CCursor::new(idx - 1));
+                output.state.cursor.set_char_range(Some(new_range));
+                cursor_stored = true;
+            }
+        }
+    }
+
+    // Line ops ran on the real buffer after the frame laid out; park the
+    // caret at the op's answer position (display space, old view — close
+    // enough; the next frame rebuilds the mapping from the new content).
+    if let Some(op) = pending_lineop {
+        if let Some(range) = output.cursor_range {
+            let ds = range.secondary.index.0.min(range.primary.index.0);
+            let de = range.secondary.index.0.max(range.primary.index.0);
+            let rs = view.d2r[ds.min(view.d2r.len() - 1)];
+            let re = view.d2r[de.min(view.d2r.len() - 1)];
+            let caret = match op {
+                LineOp::Comment => {
+                    ops::toggle_line_comment(&mut tab.content, rs, re);
+                    rs
+                }
+                LineOp::Duplicate => ops::duplicate_lines(&mut tab.content, rs, re),
+                LineOp::Delete => ops::delete_lines(&mut tab.content, rs, re),
+                LineOp::Move(dir) => match ops::move_lines(&mut tab.content, rs, re, dir) {
+                    Some((s, _)) => s,
+                    None => rs,
+                },
+            };
+            tab.dirty = true;
+            tab.folds.clear();
+            let di = view
+                .d2r
+                .iter()
+                .position(|&r| r >= caret)
+                .unwrap_or(view.d2r.len() - 1);
+            output
+                .state
+                .cursor
+                .set_char_range(Some(CCursorRange::one(CCursor::new(di))));
+            cursor_stored = true;
+        }
+    }
+
     if let Some(char_idx) = pending_goto {
         let new_range = egui::text::CCursorRange::one(CCursor::new(char_idx));
         output.state.cursor.set_char_range(Some(new_range));
-        output.state.store(ui.ctx(), output.response.id);
+        cursor_stored = true;
     } else if let Some((s, e)) = pending_find {
         if let (Some(ds), Some(de)) = (
             view.d2r.iter().position(|&r| r == s),
@@ -497,8 +465,11 @@ pub fn show_editor(
         ) {
             let new_range = egui::text::CCursorRange::two(CCursor::new(de), CCursor::new(ds));
             output.state.cursor.set_char_range(Some(new_range));
-            output.state.store(ui.ctx(), output.response.id);
+            cursor_stored = true;
         }
+    }
+    if cursor_stored {
+        output.state.store(ui.ctx(), output.response.id);
     }
 
     if let Some(range) = output.cursor_range {
@@ -514,116 +485,6 @@ pub fn show_editor(
             tab.cursor_col = col;
         }
     }
-}
-
-/// Draw the suggestion popup under the caret (`anchor` = caret glyph origin),
-/// flipping above it when it would fall out of the visible viewport. Painted
-/// through the same scrolled painter as the guides, so it tracks the text.
-/// Pure shapes, no widget: clicks pass through to TextEdit (which closes the
-/// popup), navigation is keyboard-only.
-fn draw_completion_popup(
-    ui: &egui::Ui,
-    anchor: egui::Pos2,
-    st: &completion::CompletionState,
-    palette: &Palette,
-    theme: &ColorTheme,
-) {
-    let n = st.items.len();
-    if n == 0 {
-        return;
-    }
-    let font = egui::FontId::monospace(FONT_SIZE);
-    let row_h = FONT_SIZE + 6.0;
-    let pad = 6.0;
-    let txt_color = |k: completion::Kind| match k {
-        completion::Kind::Keyword => theme.type_color(TokenType::Keyword),
-        completion::Kind::Type => theme.type_color(TokenType::Type),
-        completion::Kind::Special => theme.type_color(TokenType::Special),
-        completion::Kind::Func => theme.type_color(TokenType::Function),
-        completion::Kind::Word => palette.text,
-    };
-    let mut widths: Vec<f32> = Vec::with_capacity(n);
-    let mut max_text = 40.0f32;
-    for it in &st.items {
-        let tw = ui.fonts_mut(|f| {
-            f.layout_no_wrap(it.text.clone(), font.clone(), egui::Color32::WHITE)
-                .size()
-                .x
-        });
-        let dw = if it.detail.is_empty() {
-            0.0
-        } else {
-            ui.fonts_mut(|f| {
-                f.layout_no_wrap(it.detail.clone(), font.clone(), egui::Color32::WHITE)
-                    .size()
-                    .x
-            }) + 10.0
-        };
-        max_text = max_text.max(tw + dw);
-        widths.push(tw);
-    }
-    let mut pop = egui::Rect::from_min_size(
-        anchor + egui::vec2(0.0, FONT_SIZE + 2.0),
-        egui::vec2(max_text + pad * 2.0, n as f32 * row_h + 4.0),
-    );
-    let clip = ui.clip_rect();
-    if pop.bottom() > clip.bottom() {
-        pop = pop.translate(egui::vec2(0.0, -(FONT_SIZE + 2.0) - row_h - pop.height()));
-    }
-    ui.painter().rect(
-        pop,
-        3.0,
-        palette.panel,
-        egui::Stroke::new(1.0, palette.border),
-        egui::StrokeKind::Inside,
-    );
-    for (i, (it, _w)) in st.items.iter().zip(widths).enumerate() {
-        let row = egui::Rect::from_min_size(
-            egui::Pos2::new(pop.left(), pop.top() + 2.0 + i as f32 * row_h),
-            egui::vec2(pop.width(), row_h),
-        );
-        if i == st.selected {
-            ui.painter()
-                .rect_filled(row.shrink(1.0), 2.0, palette.accent.gamma_multiply(0.25));
-        }
-        ui.painter().text(
-            row.min + egui::vec2(pad, 1.0),
-            egui::Align2::LEFT_TOP,
-            it.text.clone(),
-            font.clone(),
-            txt_color(it.kind),
-        );
-        if !it.detail.is_empty() {
-            ui.painter().text(
-                egui::Pos2::new(pop.right() - pad, row.top() + 1.0),
-                egui::Align2::RIGHT_TOP,
-                it.detail.clone(),
-                font.clone(),
-                palette.text_muted,
-            );
-        }
-    }
-}
-
-/// Drop bracket pairs that are unmatched in the *display* scan only because a
-/// fold hides their closing bracket (their real match exists). Without this a
-/// folded block's open `{` would light up a guide straight down the file.
-fn suppress_folded_pairs(scan: &BracketScan, real_scan: &BracketScan, view: &FoldView) -> BracketScan {
-    let matched: std::collections::HashSet<usize> = real_scan
-        .pairs
-        .iter()
-        .filter(|p| p.close != usize::MAX)
-        .map(|p| p.open)
-        .collect();
-    let mut filtered = scan.clone();
-    filtered.pairs.retain(|p| {
-        if p.close != usize::MAX {
-            return true;
-        }
-        let real_open = view.d2r.get(p.open).copied().unwrap_or(usize::MAX);
-        !matched.contains(&real_open)
-    });
-    filtered
 }
 
 #[cfg(test)]

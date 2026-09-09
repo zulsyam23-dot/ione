@@ -43,8 +43,9 @@ impl Diagnostic {
 
 /// Analyze `content` with the given syntax and return sorted diagnostics plus
 /// the mask-aware bracket scan (the scanner runs once and is shared with the
-/// editor overlay cache).
-pub fn analyze_with_scan(content: &str, syntax: &Syntax) -> (Vec<Diagnostic>, BracketScan) {
+/// editor overlay cache), plus the string/comment mask itself so callers that
+/// need it (auto-close, comment toggling) don't re-lex.
+pub fn analyze_with_scan(content: &str, syntax: &Syntax) -> (Vec<Diagnostic>, BracketScan, Vec<bool>) {
     let mut out = Vec::new();
     let chars: Vec<char> = content.chars().collect();
     let (mask, _) = crate::editor::styling::mask_and_links(content, syntax);
@@ -85,7 +86,7 @@ pub fn analyze_with_scan(content: &str, syntax: &Syntax) -> (Vec<Diagnostic>, Br
     }
 
     out.sort_by_key(|d| d.start);
-    (out, scan)
+    (out, scan, mask)
 }
 
 /// Draw the squiggle under every visible diagnostic and, when the pointer
@@ -106,7 +107,9 @@ pub fn draw_squiggles(
     }
     let painter = ui.painter();
     let mut hovered: Option<&Diagnostic> = None;
-    let to_display = |real: usize| view.d2r.iter().position(|&r| r == real);
+    // d2r is non-decreasing (fold markers duplicate `open+1`), so a sorted
+    // search is exact; was iter().position() → O(diags×display) per frame.
+    let to_display = |real: usize| view.d2r.binary_search(&real).ok();
 
     for d in diags {
         let Some(ds) = to_display(d.start) else { continue };
@@ -184,11 +187,6 @@ pub fn draw_squiggles(
                     });
             });
     }
-}
-
-/// Real line number of a char index in `content`.
-pub fn line_of_char(content: &str, char_idx: usize) -> usize {
-    content.chars().take(char_idx).filter(|&c| c == '\n').count()
 }
 
 /// Cheap content hash; a changed hash is the trigger for `analyze`.

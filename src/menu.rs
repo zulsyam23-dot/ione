@@ -9,6 +9,7 @@ pub fn show_menu_bar(
     commands: &mut Vec<AppCommand>,
     current_font: &str,
     overlay: &EditorOverlay,
+    recent: &[std::path::PathBuf],
 ) {
     egui::menu::MenuBar::new().ui(ui, |ui| {
         egui::menu::MenuButton::new("File").ui(ui, |ui| {
@@ -33,6 +34,33 @@ pub fn show_menu_bar(
                 commands.push(AppCommand::OpenFolder);
                 ui.close();
             }
+            ui.separator();
+            if ui
+                .add(egui::Button::new("Quick Open").shortcut_text("Ctrl+P"))
+                .clicked()
+            {
+                commands.push(AppCommand::QuickOpen);
+                ui.close();
+            }
+            ui.menu_button("Open Recent", |ui| {
+                if recent.is_empty() {
+                    ui.add_enabled(false, egui::Button::new("No recent files"));
+                }
+                for p in recent {
+                    let label = p
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    if ui
+                        .button(label)
+                        .on_hover_text(p.to_string_lossy().to_string())
+                        .clicked()
+                    {
+                        commands.push(AppCommand::OpenRecent(p.clone()));
+                        ui.close();
+                    }
+                }
+            });
             ui.separator();
             if ui
                 .add(egui::Button::new("Save").shortcut_text("Ctrl+S"))
@@ -198,6 +226,9 @@ pub fn handle_shortcuts(ctx: &egui::Context, commands: &mut Vec<AppCommand>, ctr
             }
             if i.key_pressed(egui::Key::O) {
                 commands.push(AppCommand::OpenFile);
+            }
+            if i.key_pressed(egui::Key::P) {
+                commands.push(AppCommand::QuickOpen);
             }
             if i.key_pressed(egui::Key::S) {
                 commands.push(AppCommand::Save);

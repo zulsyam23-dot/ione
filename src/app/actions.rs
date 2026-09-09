@@ -11,7 +11,9 @@ use super::utils::{
     apply_egui_theme, documents_dir, find_next_range, find_prev_range, replace_all_in_content,
     replace_first,
 };
-use super::{AppCommand, NamingKind, NamingState, RenameState};
+use super::{
+    AppCommand, NamingKind, NamingState, QuickOpen, RenameState,
+};
 
 /// `Some(new.join(rest))` when `p` lives under `old` (itself included).
 fn remap_under(p: &Path, old: &Path, new: &Path) -> Option<PathBuf> {
@@ -159,6 +161,36 @@ impl EditorApp {
                 AppCommand::OpenFilePath(path) => {
                     self.open_path(path);
                 }
+                AppCommand::OpenRecent(path) => {
+                    if !path.is_file() {
+                        // The entry went missing; drop it so the menu stays honest.
+                        self.recent_files.retain(|p| p != &path);
+                        crate::settings::save_recents(&self.recent_files);
+                        continue;
+                    }
+                    self.open_path(path);
+                }
+                AppCommand::QuickOpen => {
+                    if self.quick_open.is_some() {
+                        self.quick_open = None;
+                    } else {
+                        // The file tree only lists expanded folders' children;
+                        // that is the palette's reach (recent files back it up).
+                        let mut paths: Vec<PathBuf> = self
+                            .file_tree
+                            .entries
+                            .iter()
+                            .filter(|e| !e.is_dir)
+                            .map(|e| e.path.clone())
+                            .collect();
+                        paths.sort();
+                        self.quick_open = Some(QuickOpen {
+                            query: String::new(),
+                            selected: 0,
+                            paths,
+                        });
+                    }
+                }
                 AppCommand::OpenFolder => {
                     if let Some(folder) = rfd::FileDialog::new().pick_folder() {
                         self.file_tree.set_root(folder);
@@ -242,6 +274,8 @@ impl EditorApp {
                         self.pending_theme = None;
                         self.theme = theme;
                         apply_egui_theme(ctx, theme);
+                        self.settings.theme = Some(theme.name().to_string());
+                        self.settings.save();
                     }
                 }
                 AppCommand::SetEditorFont(name) => {
@@ -254,6 +288,8 @@ impl EditorApp {
                             self.font_msg = Some((e, Instant::now()));
                         }
                     }
+                    self.settings.font = Some(name);
+                    self.settings.save();
                 }
                 AppCommand::FindNext(query) => {
                     if let Some(tab) = self.tabs.active_tab_mut() {
@@ -377,16 +413,25 @@ impl EditorApp {
     }
 
     pub(super) fn open_path(&mut self, path: PathBuf) {
+        // Splash for heavy opens: set before the read when the file is big
+        // enough to stall on disk, and after the read when it spans many
+        // lines (keeps the pre-existing `>= 500 lines` behavior).
+        let splash = |s: &mut Self| {
+            if let Some(ov) = LoadingOverlay::new_loading_file() {
+                s.loading = Some((ov, Instant::now()));
+            }
+        };
+        let heavy_bytes = std::fs::metadata(&path).is_ok_and(|m| m.len() >= 50_000);
+        if heavy_bytes {
+            splash(self);
+        }
         if let Ok(content) = std::fs::read_to_string(&path) {
-            // Heavy files (hundreds/thousands of lines) show the editor-area
-            // loading splash so the open doesn't feel like a hang.
-            if content.lines().count() >= 500 {
-                if let Some(ov) = LoadingOverlay::new_loading_file() {
-                    self.loading = Some((ov, Instant::now()));
-                }
+            if !heavy_bytes && content.lines().count() >= 500 {
+                splash(self);
             }
             let syntax = TabManager::detect_syntax(&path);
-            self.tabs.open_file(path, content, syntax);
+            self.tabs.open_file(path.clone(), content, syntax);
+            crate::settings::push_recent(&mut self.recent_files, path);
         }
     }
 

@@ -14,6 +14,7 @@ mod theme;
 mod loading;
 mod fonts;
 mod diagnostics;
+mod settings;
 
 use eframe::egui;
 use style::{apply_style, Palette};

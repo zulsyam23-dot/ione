@@ -215,10 +215,10 @@ pub(crate) fn fold_rows(
     brace_opens: &[usize],
     content: &str,
 ) -> Vec<usize> {
-    let line_of_char = |ci: usize| -> usize {
-        let starts = line_starts_of(content);
-        starts.partition_point(|&s| s <= ci).saturating_sub(1)
-    };
+    // ponytail: was `line_starts_of(content)` per item → O(folds×content) per
+    // frame. Hoisted: one scan, O(log n) lookups.
+    let starts = line_starts_of(content);
+    let line_of_char = |ci: usize| starts.partition_point(|&s| s <= ci).saturating_sub(1);
     let mut set = std::collections::BTreeSet::new();
     for f in folds {
         if let Some(r) = view.display_row_of(line_of_char(f.open)) {
@@ -400,7 +400,7 @@ pub(crate) fn draw_fold_icons(
 // Small shared helpers.
 // ---------------------------------------------------------------------------
 
-fn line_starts_of(content: &str) -> Vec<usize> {
+pub(crate) fn line_starts_of(content: &str) -> Vec<usize> {
     let mut starts = vec![0usize];
     for (i, c) in content.chars().enumerate() {
         if c == '\n' {
@@ -469,6 +469,31 @@ fn closest_close(content: &str, open: usize) -> Option<usize> {
         }
     }
     None
+}
+
+/// Drop bracket pairs that are unmatched in the *display* scan only because a
+/// fold hides their closing bracket (their real match exists). Without this a
+/// folded block's open `{` would light up a guide straight down the file.
+pub(crate) fn suppress_folded_pairs(
+    scan: &crate::guides::BracketScan,
+    real_scan: &crate::guides::BracketScan,
+    view: &FoldView,
+) -> crate::guides::BracketScan {
+    let matched: std::collections::HashSet<usize> = real_scan
+        .pairs
+        .iter()
+        .filter(|p| p.close != usize::MAX)
+        .map(|p| p.open)
+        .collect();
+    let mut filtered = scan.clone();
+    filtered.pairs.retain(|p| {
+        if p.close != usize::MAX {
+            return true;
+        }
+        let real_open = view.d2r.get(p.open).copied().unwrap_or(usize::MAX);
+        !matched.contains(&real_open)
+    });
+    filtered
 }
 
 #[cfg(test)]

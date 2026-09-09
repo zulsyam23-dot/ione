@@ -18,7 +18,7 @@ impl EditorApp {
             .show(root_ui, |ui| {
                 ui.horizontal(|ui| {
                     egui::menu::MenuBar::new().ui(ui, |ui| {
-                        menu::show_menu_bar(ui, commands, &self.editor_font, &self.guides());
+                        menu::show_menu_bar(ui, commands, &self.editor_font, &self.guides(), &self.recent_files);
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.add_space(8.0);

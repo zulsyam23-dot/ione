@@ -42,6 +42,14 @@ impl LoadingOverlay {
         })
     }
 
+    /// True once the splash has been shown for at least `min`. Counted from the
+    /// *first frame it was actually painted* (`started`), not from when the
+    /// overlay was scheduled — so a slow first frame can't eat the whole
+    /// display window.
+    pub fn done(&self, min: Duration) -> bool {
+        self.started.is_some_and(|s| s.elapsed() >= min)
+    }
+
     pub fn show(&mut self, ctx: &egui::Context, area: Option<egui::Rect>) {
         let now = Instant::now();
         let started = *self.started.get_or_insert(now);
