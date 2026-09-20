@@ -51,6 +51,7 @@
 - Klik ganda/ikon untuk membuka file.
 - Klik kanan untuk menu: **Open, Rename, Delete, Copy Path**.
 - Auto-refresh saat folder dibuka.
+- **Warna status Git**: file yang berubah diwarnai sesuai status (hijau added/staged, kuning modified, merah deleted, biru untracked, merah menyala conflict) dan folder induk yang memuat perubahan ikut berwarna lembut — diperbarui berkala saat file disimpan.
 - **Tahan kedalaman tak terbatas:** indentasi baris dibatasi otomatis sehingga pohon sesedalam apa pun tetap tampil rapi — tidak ada baris yang pernah "hilang" meski foldernya sangat dalam.
 - **Garis pemisah permanen** di tepi kanan explorer (antara explorer ↔ editor) digambar di lapisan teratas, jadi selalu terlihat — berapa pun isi/tinggi pohon atau status scroll.
 

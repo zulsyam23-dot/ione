@@ -35,7 +35,7 @@
 |---------|---------------|
 | **Multi-tab editor** | Buka banyak file sekaligus, syntax highlighting, nomor baris, undo/redo |
 | **Terminal PowerShell** | Multi-session nyata (portable-pty), tab untuk tiap sesi |
-| **File Explorer** | Pohon folder, expand/collapse, menu konteks (Open/Rename/Delete/Copy Path) |
+| **File Explorer** | Pohon folder, expand/collapse, menu konteks (Open/Rename/Delete/Copy Path), **warna status Git** per file/folder |
 | **Find & Replace** | Hasil live, ganti satu-satu atau ganti semua |
 | **Code Folding** | Lipat blok `{ … }` dengan `Ctrl+Shift+[` / `Ctrl+Shift+]` |
 | **Multi-select edit** | `Ctrl+D` pilih kejadian kata berikutnya, satu ketikan diedit ke semua sekaligus |

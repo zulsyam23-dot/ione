@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use eframe::egui;
@@ -122,6 +123,7 @@ impl FileTree {
         icons: &mut Icons,
         palette: &Palette,
         commands: &mut Vec<AppCommand>,
+        tints: Option<&HashMap<PathBuf, egui::Color32>>,
     ) {
         if self.root.is_none() {
             ui.vertical_centered(|ui| {
@@ -217,7 +219,9 @@ impl FileTree {
                         };
                         icons.image_button(ui, file_icon, 14.0, "");
 
-                        let color = if entry.is_dir {
+                        let color = if let Some(t) = tints.and_then(|m| m.get(&entry.path)) {
+                            *t
+                        } else if entry.is_dir {
                             palette.text
                         } else {
                             palette.text_muted

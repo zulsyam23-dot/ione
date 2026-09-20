@@ -331,6 +331,13 @@ impl eframe::App for EditorApp {
         self.auto_save(&ctx);
         menu::handle_shortcuts(&ctx, &mut commands, &mut self.ctrl_k_pending);
 
+        // Keep the explorer tint / status-bar git snippet current even while the
+        // Source Control panel is closed (throttled inside GitPanel to ~900ms).
+        if self.show_sidebar || self.git.visible {
+            self.git
+                .refresh(self.file_tree.root.as_deref(), Instant::now(), false);
+        }
+
         self.show_title_bar(root_ui, &mut commands);
 
         // Left sidebar (file explorer).

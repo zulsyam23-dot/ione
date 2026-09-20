@@ -43,8 +43,12 @@ impl EditorApp {
         let outline_h = (total_h - tree_h - HANDLE).max(40.0);
 
         ui.allocate_ui(egui::vec2(total_w, tree_h), |ui| {
+            let tints = match self.file_tree.root.as_ref() {
+                Some(root) => self.git.explorer_tints(root, &self.palette),
+                None => std::collections::HashMap::new(),
+            };
             self.file_tree
-                .show(ui, &mut self.icons, &self.palette, commands);
+                .show(ui, &mut self.icons, &self.palette, commands, Some(&tints));
         });
 
         drag_vertical_splitter(ui, self.palette.border, &mut self.outline_frac, total_h);

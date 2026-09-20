@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
@@ -182,6 +183,49 @@ fn has_any(&self) -> bool {
             .unwrap_or_else(|| "detached".to_string());
         let (staged, unstaged, untracked) = self.counts();
         Some(format!("{branch} +{staged} ~{unstaged} ?{untracked}"))
+    }
+
+    /// Absolute path → text color for the file explorer: changed files plus
+    /// every ancestor folder down to `workspace`, so rows enclosing changes
+    /// are tinted too. Returns an empty map when not inside a repository.
+    pub fn explorer_tints(
+        &self,
+        workspace: &Path,
+        palette: &Palette,
+    ) -> HashMap<PathBuf, egui::Color32> {
+        let Some(repo) = &self.repo_root else {
+            return HashMap::new();
+        };
+        let mut tints: HashMap<PathBuf, egui::Color32> = HashMap::new();
+        for c in &self.changes {
+            let abs = repo.join(&c.path);
+            let color = if c.conflict {
+                palette.diag_error
+            } else {
+                self.kind_color(palette, c.kind)
+            };
+            tints.insert(abs.clone(), color);
+
+            // Tint ancestor folders (softened) down to the workspace root, so a
+            // folder enclosing changes reads as dirty even when no file inside
+            // it is shown directly.
+            for dir in abs.ancestors().skip(1) {
+                if !dir.starts_with(workspace) {
+                    break;
+                }
+                let soft = egui::Color32::from_rgba_unmultiplied(
+                    color.r(),
+                    color.g(),
+                    color.b(),
+                    160,
+                );
+                tints.entry(dir.to_path_buf()).or_insert(soft);
+                if dir == workspace {
+                    break;
+                }
+            }
+        }
+        tints
     }
 }
 
@@ -1042,6 +1086,35 @@ index 123abc..456def 100644
         let (added, removed) = diff_counts(diff);
         assert_eq!(added, 2);
         assert_eq!(removed, 1);
+    }
+
+    #[test]
+    fn explorer_tints_cover_files_and_ancestor_folders() {
+        let tmp = std::env::temp_dir().join(format!("ione_git_tint_{}", std::process::id()));
+        let repo = tmp.join("repo");
+        let work = repo.join("src");
+        let mut g = GitPanel::new();
+        g.repo_root = Some(repo.clone());
+        g.changes = vec![
+            GitChange {
+                path: PathBuf::from("src/foo.rs"),
+                kind: ChangeKind::Modified,
+                staged: false,
+                conflict: false,
+            },
+            GitChange {
+                path: PathBuf::from("src/bar.rs"),
+                kind: ChangeKind::Untracked,
+                staged: false,
+                conflict: false,
+            },
+        ];
+        let tints = g.explorer_tints(&work, &Palette::dark());
+        assert!(tints.contains_key(&repo.join("src/foo.rs")));
+        assert!(tints.contains_key(&repo.join("src/bar.rs")));
+        assert!(tints.contains_key(&repo.join("src")));
+        assert!(tints.contains_key(&work));
+        assert!(!tints.contains_key(&repo.join("other.rs")));
     }
 }
 
