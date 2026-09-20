@@ -6,15 +6,15 @@
 //! - `brackets`: mask-aware bracket scan (pairs, depths, active pair).
 //! - `geometry`: galley pixel math and the low-level guide strokes.
 
-use egui::text::CCursorRange;
 use eframe::egui::{self, Id, Pos2};
+use egui::text::CCursorRange;
 
 use crate::style::Palette;
 
 pub(crate) mod brackets;
 pub(crate) mod geometry;
 
-pub(crate) use brackets::{analyze_brackets, hovered_pair, BracketScan, Pair};
+pub(crate) use brackets::{BracketScan, Pair, analyze_brackets, hovered_pair};
 
 use geometry::{char_rect, draw_pair_guide, guide_line, pair_guide_x};
 
@@ -87,9 +87,12 @@ pub fn draw_editor_overlays(
         let anim_id = fade_id.with(("pair", key));
         if key != last_open {
             ui.ctx().animate_bool_with_time(anim_id, false, FADE);
-            ui.ctx().data_mut(|d| d.insert_temp(fade_id.with("last_pair"), key));
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(fade_id.with("last_pair"), key));
         }
-        let t = ui.ctx().animate_bool_with_time(anim_id, active.is_some(), FADE);
+        let t = ui
+            .ctx()
+            .animate_bool_with_time(anim_id, active.is_some(), FADE);
         if t > 0.0 && t < 1.0 {
             ui.ctx().request_repaint();
         }
@@ -129,19 +132,40 @@ mod tests {
         let ctx = egui::Context::default();
         ctx.set_fonts(egui::FontDefinitions::default());
         let origin = egui::Pos2::new(4.0, 2.0);
-        let overlay = EditorOverlay { bracket_guides: true, colorize_brackets: false };
+        let overlay = EditorOverlay {
+            bracket_guides: true,
+            colorize_brackets: false,
+        };
         let scan = analyze_brackets(&content.chars().collect::<Vec<char>>(), &[]);
         let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 300.0))),
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 300.0),
+            )),
             ..Default::default()
         };
         let output = ctx.run_ui(input, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                let galley = ui.fonts_mut(|f| f.layout_job(LayoutJob::single_section(
-                    content.to_string(),
-                    egui::TextFormat::simple(egui::FontId::monospace(14.0), egui::Color32::WHITE),
-                )));
-                draw_editor_overlays(ui, "guide_test", &galley, origin, None, &scan, &overlay, &Palette::dark(), 14.0);
+                let galley = ui.fonts_mut(|f| {
+                    f.layout_job(LayoutJob::single_section(
+                        content.to_string(),
+                        egui::TextFormat::simple(
+                            egui::FontId::monospace(14.0),
+                            egui::Color32::WHITE,
+                        ),
+                    ))
+                });
+                draw_editor_overlays(
+                    ui,
+                    "guide_test",
+                    &galley,
+                    origin,
+                    None,
+                    &scan,
+                    &overlay,
+                    &Palette::dark(),
+                    14.0,
+                );
             });
         });
         let mut painted = Vec::new();
@@ -161,22 +185,47 @@ mod tests {
         let content = "fn main() {\n    a();\n    b();\n    c();\n}\n";
         let origin = egui::Pos2::new(4.0, 2.0);
         let scan = analyze_brackets(&content.chars().collect::<Vec<char>>(), &[]);
-        let overlay = EditorOverlay { bracket_guides: true, colorize_brackets: false };
+        let overlay = EditorOverlay {
+            bracket_guides: true,
+            colorize_brackets: false,
+        };
         let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 300.0))),
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 300.0),
+            )),
             ..Default::default()
         };
         let expected_x: std::cell::Cell<f32> = std::cell::Cell::new(0.0);
         let output = ctx.run_ui(input, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                let galley = ui.fonts_mut(|f| f.layout_job(LayoutJob::single_section(
-                    content.to_string(),
-                    egui::TextFormat::simple(egui::FontId::monospace(14.0), egui::Color32::WHITE),
-                )));
+                let galley = ui.fonts_mut(|f| {
+                    f.layout_job(LayoutJob::single_section(
+                        content.to_string(),
+                        egui::TextFormat::simple(
+                            egui::FontId::monospace(14.0),
+                            egui::Color32::WHITE,
+                        ),
+                    ))
+                });
                 // `fn main`'s `}` closes at the left margin; its guide frames
                 // the body right at the edge like any other multi-line pair.
-                expected_x.set(char_rect(&galley, origin, content.find('}').unwrap()).left().round());
-                draw_editor_overlays(ui, "guide_test", &galley, origin, None, &scan, &overlay, &Palette::dark(), 14.0);
+                expected_x.set(
+                    char_rect(&galley, origin, content.find('}').unwrap())
+                        .left()
+                        .round(),
+                );
+                draw_editor_overlays(
+                    ui,
+                    "guide_test",
+                    &galley,
+                    origin,
+                    None,
+                    &scan,
+                    &overlay,
+                    &Palette::dark(),
+                    14.0,
+                );
             });
         });
         let mut tall = Vec::new();
@@ -188,7 +237,10 @@ mod tests {
             }
         }
         output.drop_without_applying_deltas();
-        assert!(tall.iter().any(|&cx| (cx - expected_x.get()).abs() <= 1.0), "margin guide must be drawn: {tall:?}");
+        assert!(
+            tall.iter().any(|&cx| (cx - expected_x.get()).abs() <= 1.0),
+            "margin guide must be drawn: {tall:?}"
+        );
     }
 
     #[test]
@@ -201,26 +253,47 @@ mod tests {
         let content = "fn main() {\n    if x {\n        for i in 0..3 {\n            a();\n        }\n    }\n}\n";
         let origin = egui::Pos2::new(0.0, 0.0);
         let scan = analyze_brackets(&content.chars().collect::<Vec<char>>(), &[]);
-        let overlay = EditorOverlay { bracket_guides: true, colorize_brackets: false };
+        let overlay = EditorOverlay {
+            bracket_guides: true,
+            colorize_brackets: false,
+        };
         let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 400.0))),
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 400.0),
+            )),
             ..Default::default()
         };
         let if_x: std::cell::Cell<f32> = std::cell::Cell::new(0.0);
         let for_x: std::cell::Cell<f32> = std::cell::Cell::new(0.0);
         let output = ctx.run_ui(input, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                let galley = ui.fonts_mut(|f| f.layout_job(LayoutJob::single_section(
-                    content.to_string(),
-                    egui::TextFormat::simple(egui::FontId::monospace(14.0), egui::Color32::WHITE),
-                )));
+                let galley = ui.fonts_mut(|f| {
+                    f.layout_job(LayoutJob::single_section(
+                        content.to_string(),
+                        egui::TextFormat::simple(
+                            egui::FontId::monospace(14.0),
+                            egui::Color32::WHITE,
+                        ),
+                    ))
+                });
                 // Close `}` of the `if` block at col 4, of the `for` block at
                 // col 8. The guide must be centered on exactly those columns.
                 let if_close = content.find("    }\n").unwrap() + 4;
                 let for_close = content.find("        }\n").unwrap() + 8;
                 if_x.set(char_rect(&galley, origin, if_close).left().round());
                 for_x.set(char_rect(&galley, origin, for_close).left().round());
-                draw_editor_overlays(ui, "guide_test", &galley, origin, None, &scan, &overlay, &Palette::dark(), 14.0);
+                draw_editor_overlays(
+                    ui,
+                    "guide_test",
+                    &galley,
+                    origin,
+                    None,
+                    &scan,
+                    &overlay,
+                    &Palette::dark(),
+                    14.0,
+                );
             });
         });
         let mut painted = Vec::new();
@@ -234,9 +307,19 @@ mod tests {
         output.drop_without_applying_deltas();
         // `fn main` closes at the margin, `if` at col 4, `for` at col 8 — all
         // three multi-line pairs draw one guide on their own close column.
-        assert_eq!(painted.len(), 3, "expected fn + if + for guides: {painted:?}");
-        assert!(painted.iter().any(|&x| (x - if_x.get()).abs() <= 1.0), "missing col-4 guide: {painted:?}");
-        assert!(painted.iter().any(|&x| (x - for_x.get()).abs() <= 1.0), "missing col-8 guide: {painted:?}");
+        assert_eq!(
+            painted.len(),
+            3,
+            "expected fn + if + for guides: {painted:?}"
+        );
+        assert!(
+            painted.iter().any(|&x| (x - if_x.get()).abs() <= 1.0),
+            "missing col-4 guide: {painted:?}"
+        );
+        assert!(
+            painted.iter().any(|&x| (x - for_x.get()).abs() <= 1.0),
+            "missing col-8 guide: {painted:?}"
+        );
     }
 
     #[test]
@@ -244,12 +327,22 @@ mod tests {
         // Two sibling `if`s close at the same column. Each block must draw its
         // own guide: same column but different rows — the second one is NOT on
         // top of the first, so it must not be skipped.
-        let content = "fn outer() {\n    if a {\n        a();\n    }\n    if b {\n        b();\n    }\n}\n";
+        let content =
+            "fn outer() {\n    if a {\n        a();\n    }\n    if b {\n        b();\n    }\n}\n";
         let rects = guide_rects(content);
-        let guides: Vec<_> = rects.iter().filter(|(x, _, _)| (*x - 40.0).abs() < 20.0).collect();
+        let guides: Vec<_> = rects
+            .iter()
+            .filter(|(x, _, _)| (*x - 40.0).abs() < 20.0)
+            .collect();
         assert_eq!(guides.len(), 2, "{guides:?}");
-        assert!((guides[0].0 - guides[1].0).abs() <= 1.0, "same column expected: {guides:?}");
-        assert!(guides[0].1 != guides[1].1, "guides on the same row makes no sense: {guides:?}");
+        assert!(
+            (guides[0].0 - guides[1].0).abs() <= 1.0,
+            "same column expected: {guides:?}"
+        );
+        assert!(
+            guides[0].1 != guides[1].1,
+            "guides on the same row makes no sense: {guides:?}"
+        );
     }
 
     #[test]
@@ -260,7 +353,10 @@ mod tests {
         // matched pair still visible. Its ACTIVE guide must still fade in.
         let content = "fn a() {⋯\nfn b() {\n    if y {\n        z();\n    }\n}\n";
         let origin = egui::Pos2::new(4.0, 2.0);
-        let overlay = EditorOverlay { bracket_guides: true, colorize_brackets: false };
+        let overlay = EditorOverlay {
+            bracket_guides: true,
+            colorize_brackets: false,
+        };
         let scan = analyze_brackets(&content.chars().collect::<Vec<char>>(), &[]);
         let mut cursor_idx = 0usize; // inside the fn b body
         for p in &scan.pairs {
@@ -272,24 +368,48 @@ mod tests {
         for frame in 0..3u64 {
             let input = egui::RawInput {
                 time: Some(frame as f64 / 60.0),
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))),
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 600.0),
+                )),
                 ..Default::default()
             };
             let output = ctx.run_ui(input.clone(), |ui| {
                 egui::CentralPanel::default().show(ui, |ui| {
-                    let galley = ui.fonts_mut(|f| f.layout_job(LayoutJob::single_section(
-                        content.to_string(),
-                        egui::TextFormat::simple(egui::FontId::monospace(14.0), egui::Color32::WHITE),
-                    )));
-                    let cursor = egui::text::CCursorRange::one(egui::text::CCursor::new(cursor_idx));
-                    draw_editor_overlays(ui, "anim_probe", &galley, origin, Some(cursor), &scan, &overlay, &Palette::dark(), 14.0);
+                    let galley = ui.fonts_mut(|f| {
+                        f.layout_job(LayoutJob::single_section(
+                            content.to_string(),
+                            egui::TextFormat::simple(
+                                egui::FontId::monospace(14.0),
+                                egui::Color32::WHITE,
+                            ),
+                        ))
+                    });
+                    let cursor =
+                        egui::text::CCursorRange::one(egui::text::CCursor::new(cursor_idx));
+                    draw_editor_overlays(
+                        ui,
+                        "anim_probe",
+                        &galley,
+                        origin,
+                        Some(cursor),
+                        &scan,
+                        &overlay,
+                        &Palette::dark(),
+                        14.0,
+                    );
                 });
             });
             let mut tall = Vec::new();
             for cs in &output.shapes {
                 if let egui::Shape::Rect(r) = &cs.shape {
                     if r.rect.width() <= 6.0 && r.rect.height() > 20.0 {
-                        tall.push((r.rect.left().round(), r.rect.top().round(), r.rect.bottom().round(), r.fill.gamma_multiply(1.0).a()));
+                        tall.push((
+                            r.rect.left().round(),
+                            r.rect.top().round(),
+                            r.rect.bottom().round(),
+                            r.fill.gamma_multiply(1.0).a(),
+                        ));
                     }
                 }
             }
@@ -307,30 +427,60 @@ mod tests {
         ctx.set_fonts(egui::FontDefinitions::default());
         let content = "pub struct Button {\n    pub width: f32,\n    pub bg: Color,\n    hovered: Cell<bool>,\n}\n\nimpl Button {\n    pub fn new(label: &str, bg: Color) -> Self {\n        Button {\n            width: 120.0,\n            height: 40.0,\n        }\n    }\n}\n";
         let mut tab = crate::tabs::Tab::new("main.rs", content, Default::default());
-        let overlay = EditorOverlay { bracket_guides: true, colorize_brackets: true };
+        let overlay = EditorOverlay {
+            bracket_guides: true,
+            colorize_brackets: true,
+        };
         let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 500.0))),
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 500.0),
+            )),
             ..Default::default()
         };
         let output = ctx.run_ui(input, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                crate::editor::show_editor(ui, &mut tab, crate::theme::Theme::GithubDark, "000000", &overlay, &Palette::dark(), &mut crate::icons::Icons::new());
+                crate::editor::show_editor(
+                    ui,
+                    &mut tab,
+                    crate::theme::Theme::GithubDark,
+                    "000000",
+                    &overlay,
+                    &Palette::dark(),
+                    &mut crate::icons::Icons::new(),
+                );
             });
         });
         let mut painted = Vec::new();
         for cs in &output.shapes {
             if let egui::Shape::Rect(r) = &cs.shape {
                 if r.rect.width() <= 50.0 && r.rect.height() > 8.0 {
-                    painted.push((r.rect.left().round(), r.rect.top().round(), r.rect.bottom().round()));
+                    painted.push((
+                        r.rect.left().round(),
+                        r.rect.top().round(),
+                        r.rect.bottom().round(),
+                    ));
                 }
             }
         }
         output.drop_without_applying_deltas();
         // `struct Button` and `impl Button` both close at the left margin: two
         // distinct col-0 guides must be painted (different start rows).
-        let col0 = painted.iter().map(|(x, _, _)| *x).fold(f32::INFINITY, f32::min);
-        let at_margin: Vec<_> = painted.iter().filter(|(x, _, _)| (*x - col0).abs() <= 1.0).collect();
-        assert!(at_margin.len() >= 2, "struct + impl col-0 guides expected: {painted:?}");
-        assert!(at_margin[0].1 != at_margin[1].1, "distinct rows expected: {painted:?}");
+        let col0 = painted
+            .iter()
+            .map(|(x, _, _)| *x)
+            .fold(f32::INFINITY, f32::min);
+        let at_margin: Vec<_> = painted
+            .iter()
+            .filter(|(x, _, _)| (*x - col0).abs() <= 1.0)
+            .collect();
+        assert!(
+            at_margin.len() >= 2,
+            "struct + impl col-0 guides expected: {painted:?}"
+        );
+        assert!(
+            at_margin[0].1 != at_margin[1].1,
+            "distinct rows expected: {painted:?}"
+        );
     }
 }

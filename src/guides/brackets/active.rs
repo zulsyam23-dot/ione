@@ -78,15 +78,24 @@ mod tests {
         // Cursor right after the inner open bracket, before the nested `[`, is
         // inside the `()` pair only.
         let active_outer = scan.active_pair(inner_open + 1).unwrap();
-        assert_eq!((active_outer.open, active_outer.close), (inner_open, inner_close));
+        assert_eq!(
+            (active_outer.open, active_outer.close),
+            (inner_open, inner_close)
+        );
 
         // Cursor inside the nested `[]` picks the innermost pair.
         let active_deep = scan.active_pair(deep_open + 1).unwrap();
-        assert_eq!((active_deep.open, active_deep.close), (deep_open, deep_close));
+        assert_eq!(
+            (active_deep.open, active_deep.close),
+            (deep_open, deep_close)
+        );
 
         // Cursor right on the closing bracket still counts as inside.
         let active_at_close = scan.active_pair(inner_close).unwrap();
-        assert_eq!((active_at_close.open, active_at_close.close), (inner_open, inner_close));
+        assert_eq!(
+            (active_at_close.open, active_at_close.close),
+            (inner_open, inner_close)
+        );
 
         // Cursor before the opening bracket is not inside.
         assert!(scan.active_pair(inner_open).is_none());
@@ -108,17 +117,26 @@ mod tests {
         let content = "fn main() {\n    if x {\n        a();\n    }\n}\n";
         let origin = Pos2::ZERO;
 
-        let galley: std::cell::RefCell<Option<std::sync::Arc<egui::Galley>>> = std::cell::RefCell::new(None);
+        let galley: std::cell::RefCell<Option<std::sync::Arc<egui::Galley>>> =
+            std::cell::RefCell::new(None);
         let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(600.0, 400.0))),
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(600.0, 400.0),
+            )),
             ..Default::default()
         };
         let output = ctx.run_ui(input, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                let g = ui.fonts_mut(|f| f.layout_job(egui::text::LayoutJob::single_section(
-                    content.to_string(),
-                    egui::TextFormat::simple(egui::FontId::monospace(14.0), egui::Color32::WHITE),
-                )));
+                let g = ui.fonts_mut(|f| {
+                    f.layout_job(egui::text::LayoutJob::single_section(
+                        content.to_string(),
+                        egui::TextFormat::simple(
+                            egui::FontId::monospace(14.0),
+                            egui::Color32::WHITE,
+                        ),
+                    ))
+                });
                 *galley.borrow_mut() = Some(g);
             });
         });
@@ -145,20 +163,37 @@ mod tests {
         assert_eq!(outer.open, content.find('{').unwrap());
 
         // Pointer far from any column yields nothing.
-        assert!(hovered_pair(Pos2::new(lvl1_x + 40.0, mid_y), &galley, origin, &scan.pairs).is_none());
+        assert!(
+            hovered_pair(
+                Pos2::new(lvl1_x + 40.0, mid_y),
+                &galley,
+                origin,
+                &scan.pairs
+            )
+            .is_none()
+        );
         // Single-line pair (no guide) is never hoverable.
         let one_line = "fn f() { g(); }\n";
-        let g: std::cell::RefCell<Option<std::sync::Arc<egui::Galley>>> = std::cell::RefCell::new(None);
+        let g: std::cell::RefCell<Option<std::sync::Arc<egui::Galley>>> =
+            std::cell::RefCell::new(None);
         let input2 = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(600.0, 200.0))),
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(600.0, 200.0),
+            )),
             ..Default::default()
         };
         let output2 = ctx.run_ui(input2, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                let gal = ui.fonts_mut(|f| f.layout_job(egui::text::LayoutJob::single_section(
-                    one_line.to_string(),
-                    egui::TextFormat::simple(egui::FontId::monospace(14.0), egui::Color32::WHITE),
-                )));
+                let gal = ui.fonts_mut(|f| {
+                    f.layout_job(egui::text::LayoutJob::single_section(
+                        one_line.to_string(),
+                        egui::TextFormat::simple(
+                            egui::FontId::monospace(14.0),
+                            egui::Color32::WHITE,
+                        ),
+                    ))
+                });
                 *g.borrow_mut() = Some(gal);
             });
         });

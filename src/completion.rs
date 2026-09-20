@@ -85,8 +85,14 @@ pub fn prefix_at_cursor(text: &str, cursor_char: usize) -> (String, Option<char>
     let chars: Vec<char> = text.chars().collect();
     let n = chars.len();
     let cur = cursor_char.min(n);
-    let line_start = chars[..cur].iter().rposition(|&c| c == '\n').map_or(0, |i| i + 1);
-    let line_end = chars[cur..].iter().position(|&c| c == '\n').map_or(n, |i| cur + i);
+    let line_start = chars[..cur]
+        .iter()
+        .rposition(|&c| c == '\n')
+        .map_or(0, |i| i + 1);
+    let line_end = chars[cur..]
+        .iter()
+        .position(|&c| c == '\n')
+        .map_or(n, |i| cur + i);
     let line: String = chars[line_start..line_end].iter().collect();
     let prefix = prefix_at(&line, cur - line_start);
     let next = chars.get(cur).copied();
@@ -179,10 +185,26 @@ mod tests {
         let syms = crate::outline::extract_symbols(content, &rust());
         let items = build_items(content, &rust(), &syms, "a");
 
-        assert!(items.iter().any(|i| i.text == "add" && i.kind == Kind::Func));
-        assert!(items.iter().any(|i| i.text == "ary_other" && i.kind == Kind::Word));
-        assert!(items.iter().any(|i| i.text == "as" && i.kind == Kind::Keyword));
-        assert!(items.iter().any(|i| i.text == "Arc" && i.kind == Kind::Type));
+        assert!(
+            items
+                .iter()
+                .any(|i| i.text == "add" && i.kind == Kind::Func)
+        );
+        assert!(
+            items
+                .iter()
+                .any(|i| i.text == "ary_other" && i.kind == Kind::Word)
+        );
+        assert!(
+            items
+                .iter()
+                .any(|i| i.text == "as" && i.kind == Kind::Keyword)
+        );
+        assert!(
+            items
+                .iter()
+                .any(|i| i.text == "Arc" && i.kind == Kind::Type)
+        );
         // The function's signature detail carries its parameter group.
         let add = items.iter().find(|i| i.text == "add").unwrap();
         assert_eq!(add.detail, "fn (a: i32, b: i32) ·:2");

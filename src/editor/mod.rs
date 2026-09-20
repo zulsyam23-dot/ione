@@ -24,7 +24,7 @@ use egui::widgets::text_edit::TextEditOutput;
 use egui_code_editor::highlighting::Links;
 
 use crate::completion::{self, CompletionState};
-use crate::guides::{draw_editor_overlays, EditorOverlay};
+use crate::guides::{EditorOverlay, draw_editor_overlays};
 use crate::icons::Icons;
 use crate::style::Palette;
 use crate::tabs::Tab;
@@ -123,7 +123,12 @@ pub fn show_editor(
         .as_ref()
         .is_some_and(|(h, f, _)| *h == content_hash0 && *f == fold_fp)
     {
-        tab.cache.fold_view_cache.as_ref().expect("just checked").2.clone()
+        tab.cache
+            .fold_view_cache
+            .as_ref()
+            .expect("just checked")
+            .2
+            .clone()
     } else {
         let v = folds::build_fold_view(&tab.content, &tab.folds);
         tab.cache.fold_view_cache = Some((content_hash0, fold_fp, v.clone()));
@@ -491,8 +496,8 @@ pub fn show_editor(
 mod repro {
     use super::*;
     use eframe::egui;
-    use egui::text::LayoutJob;
     use egui::TextBuffer;
+    use egui::text::LayoutJob;
 
     fn key(key: egui::Key, pressed: bool) -> egui::Event {
         egui::Event::Key {
@@ -552,7 +557,15 @@ mod repro {
         };
         let output = ctx.run_ui(input, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                show_editor(ui, &mut tab, Theme::GithubDark, "000000", &overlay, &palette, &mut Icons::new());
+                show_editor(
+                    ui,
+                    &mut tab,
+                    Theme::GithubDark,
+                    "000000",
+                    &overlay,
+                    &palette,
+                    &mut Icons::new(),
+                );
             });
         });
 
@@ -576,11 +589,7 @@ mod repro {
         let run = |source: &str| {
             let ctx = egui::Context::default();
             setup(&ctx);
-            let mut tab = Tab::new(
-                "main.rs",
-                source,
-                egui_code_editor::Syntax::rust(),
-            );
+            let mut tab = Tab::new("main.rs", source, egui_code_editor::Syntax::rust());
             let overlay = EditorOverlay {
                 bracket_guides: true,
                 colorize_brackets: true,
@@ -595,7 +604,15 @@ mod repro {
             };
             let output = ctx.run_ui(input, |ui| {
                 egui::CentralPanel::default().show(ui, |ui| {
-                    show_editor(ui, &mut tab, Theme::GithubDark, "000000", &overlay, &palette, &mut Icons::new());
+                    show_editor(
+                        ui,
+                        &mut tab,
+                        Theme::GithubDark,
+                        "000000",
+                        &overlay,
+                        &palette,
+                        &mut Icons::new(),
+                    );
                 });
             });
             let segments = output
@@ -650,26 +667,51 @@ mod repro {
         setup(&ctx);
 
         let mut text = String::from("fn main() {\n    let x = 1;\n}\n");
-        let big = "fn f() {\n  [1, 2, 3].iter().map(|v| v * v).collect()\n}\n\n"
-            .repeat(30);
+        let big = "fn f() {\n  [1, 2, 3].iter().map(|v| v * v).collect()\n}\n\n".repeat(30);
         let steps = vec![
-            vec![click(egui::pos2(120.0, 100.0), true), click(egui::pos2(120.0, 100.0), false)],
+            vec![
+                click(egui::pos2(120.0, 100.0), true),
+                click(egui::pos2(120.0, 100.0), false),
+            ],
             vec![egui::Event::Paste(big.clone())],
             vec![egui::Event::Text("xyz".to_string())],
-            vec![key(egui::Key::Backspace, true), key(egui::Key::Backspace, false)],
+            vec![
+                key(egui::Key::Backspace, true),
+                key(egui::Key::Backspace, false),
+            ],
             vec![key(egui::Key::Enter, true), key(egui::Key::Enter, false)],
             vec![ctrl_key(egui::Key::A)],
-            vec![egui::Event::Paste("  } else if (a) {\n    b();\n  }\n".to_string())],
-            vec![key(egui::Key::ArrowUp, true), key(egui::Key::ArrowUp, false)],
-            vec![key(egui::Key::ArrowDown, true), key(egui::Key::ArrowDown, false)],
+            vec![egui::Event::Paste(
+                "  } else if (a) {\n    b();\n  }\n".to_string(),
+            )],
+            vec![
+                key(egui::Key::ArrowUp, true),
+                key(egui::Key::ArrowUp, false),
+            ],
+            vec![
+                key(egui::Key::ArrowDown, true),
+                key(egui::Key::ArrowDown, false),
+            ],
             vec![key(egui::Key::Delete, true), key(egui::Key::Delete, false)],
-            vec![key(egui::Key::ArrowLeft, true), ctrl_key(egui::Key::Backspace)],
+            vec![
+                key(egui::Key::ArrowLeft, true),
+                ctrl_key(egui::Key::Backspace),
+            ],
             vec![key(egui::Key::Home, true), ctrl_key(egui::Key::Home)],
-            vec![click(egui::pos2(20.0, 60.0), true), click(egui::pos2(700.0, 200.0), false)],
+            vec![
+                click(egui::pos2(20.0, 60.0), true),
+                click(egui::pos2(700.0, 200.0), false),
+            ],
             vec![egui::Event::Text("overwritten".to_string())],
             vec![egui::Event::Paste(String::new())],
-            vec![egui::Event::Ime(egui::ImeEvent::DeleteSurrounding { before_chars: 100, after_chars: 0 })],
-            vec![egui::Event::Ime(egui::ImeEvent::Preedit { text: "test".to_string(), active_range_chars: None })],
+            vec![egui::Event::Ime(egui::ImeEvent::DeleteSurrounding {
+                before_chars: 100,
+                after_chars: 0,
+            })],
+            vec![egui::Event::Ime(egui::ImeEvent::Preedit {
+                text: "test".to_string(),
+                active_range_chars: None,
+            })],
             vec![egui::Event::Ime(egui::ImeEvent::Commit("done".to_string()))],
             vec![ctrl_key(egui::Key::Z), ctrl_key(egui::Key::Y)],
             vec![key(egui::Key::Tab, true), key(egui::Key::Tab, false)],
@@ -741,7 +783,10 @@ mod repro {
             // Type at the caret.
             vec![egui::Event::Text("x".to_string())],
             // Select-all + replace across folded lines.
-            vec![ctrl_key(egui::Key::A), egui::Event::Text("fn z() {\n    a();\n}\n".to_string())],
+            vec![
+                ctrl_key(egui::Key::A),
+                egui::Event::Text("fn z() {\n    a();\n}\n".to_string()),
+            ],
             // Rewrite content fully inside the fold region (past the marker).
             vec![
                 ctrl_key(egui::Key::A),

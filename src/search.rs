@@ -72,7 +72,8 @@ impl SearchPanel {
                     }
                 }
 
-                let cs_changed = ui.checkbox(&mut self.case_sensitive, "Aa").changed() && !self.query.is_empty();
+                let cs_changed =
+                    ui.checkbox(&mut self.case_sensitive, "Aa").changed() && !self.query.is_empty();
                 if cs_changed {
                     if self.search_files {
                         self.run_file_search(root, &self.query.clone(), self.case_sensitive);
@@ -128,10 +129,7 @@ impl SearchPanel {
                     self.show_replace = !self.show_replace;
                 }
 
-                if icons
-                    .image_button(ui, Icon::Close, 14.0, "Close")
-                    .clicked()
-                {
+                if icons.image_button(ui, Icon::Close, 14.0, "Close").clicked() {
                     self.visible = false;
                 }
             });
@@ -174,9 +172,7 @@ impl SearchPanel {
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 for res in &self.file_results {
-                    let rel = res.path
-                        .display()
-                        .to_string();
+                    let rel = res.path.display().to_string();
                     ui.horizontal(|ui| {
                         let label = ui
                             .add(
@@ -192,7 +188,8 @@ impl SearchPanel {
                         }
                         ui.add(
                             egui::Label::new(
-                                egui::RichText::new(&res.line_text).color(ui.visuals().text_color()),
+                                egui::RichText::new(&res.line_text)
+                                    .color(ui.visuals().text_color()),
                             )
                             .truncate(),
                         );
@@ -233,7 +230,10 @@ impl SearchPanel {
             };
             for e in rd.flatten() {
                 let p = e.path();
-                if p.file_name().map(|n| n.to_string_lossy().starts_with('.')).unwrap_or(false) {
+                if p.file_name()
+                    .map(|n| n.to_string_lossy().starts_with('.'))
+                    .unwrap_or(false)
+                {
                     continue;
                 }
                 if p.is_dir() {

@@ -69,7 +69,14 @@ pub(crate) fn draw_pair_guide(
 /// A square-cap vertical guide: a thin rect reads as a crisp uniform stroke
 /// of exactly `width` px regardless of how long the block is. (Rounded caps
 /// the size of the half-width turn short guides into pills that look thinner.)
-pub(crate) fn guide_line(painter: &egui::Painter, x: f32, y0: f32, y1: f32, width: f32, color: Color32) {
+pub(crate) fn guide_line(
+    painter: &egui::Painter,
+    x: f32,
+    y0: f32,
+    y1: f32,
+    width: f32,
+    color: Color32,
+) {
     let half = width / 2.0;
     let rect = Rect::from_min_max(Pos2::new(x - half, y0), Pos2::new(x + half, y1));
     painter.rect_filled(rect, egui::CornerRadius::ZERO, color);

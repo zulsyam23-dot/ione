@@ -12,8 +12,8 @@ use std::any::TypeId;
 use std::ops::Range;
 
 use eframe::egui;
-use egui::text::CharIndex;
 use egui::TextBuffer;
+use egui::text::CharIndex;
 
 use crate::guides::brackets::BracePair;
 use crate::icons::{Icon, Icons};
@@ -124,16 +124,17 @@ pub(crate) fn build_fold_view(content: &str, folds: &[Fold]) -> FoldView {
         while eff.get(fi).is_some_and(|&(_, cl, _)| li > cl) {
             fi += 1;
         }
-        let hides = eff
-            .get(fi)
-            .is_some_and(|&(ol, cl, _)| li > ol && li <= cl);
+        let hides = eff.get(fi).is_some_and(|&(ol, cl, _)| li > ol && li <= cl);
         if hides {
             li += 1;
             continue;
         }
         let char_start = count;
         let ls = line_starts[li];
-        let le = line_starts.get(li + 1).map(|&s| s - 1).unwrap_or(chars.len());
+        let le = line_starts
+            .get(li + 1)
+            .map(|&s| s - 1)
+            .unwrap_or(chars.len());
         for ci in ls..le {
             d2r.push(ci);
             display.push(chars[ci]);
@@ -143,7 +144,10 @@ pub(crate) fn build_fold_view(content: &str, folds: &[Fold]) -> FoldView {
         // itself (no extra row), so a folded block reads like VS Code's. The
         // marker maps to `open + 1` — just inside the fold's opening brace —
         // so typing at the marker lands right after the `{`.
-        let marker = eff.get(fi).filter(|&&(ol, _, _)| ol == li).map(|&(_, _, o)| o);
+        let marker = eff
+            .get(fi)
+            .filter(|&&(ol, _, _)| ol == li)
+            .map(|&(_, _, o)| o);
         if let Some(open) = marker {
             d2r.push(open + 1);
             display.push_str(MARKER);
@@ -156,12 +160,22 @@ pub(crate) fn build_fold_view(content: &str, folds: &[Fold]) -> FoldView {
         }
         real_row[li] = rows.len();
         let marker_char = marker.map(|_| count - MARKER_CHARS);
-        rows.push(Row { line: li, char_start, marker_char, marker });
+        rows.push(Row {
+            line: li,
+            char_start,
+            marker_char,
+            marker,
+        });
         li += 1;
     }
     d2r.push(chars.len());
 
-    FoldView { display, d2r, rows, real_row }
+    FoldView {
+        display,
+        d2r,
+        rows,
+        real_row,
+    }
 }
 
 /// Toggle the fold whose block starts on `real_line`: closes it when open,
@@ -252,7 +266,11 @@ impl<'a> FoldBuffer<'a> {
         folds: &'a mut Vec<Fold>,
         view: FoldView,
     ) -> Self {
-        Self { content, folds, view }
+        Self {
+            content,
+            folds,
+            view,
+        }
     }
 
     pub(crate) fn view(&self) -> &FoldView {
@@ -371,10 +389,8 @@ pub(crate) fn draw_fold_icons(
             continue;
         };
         let y = galley_pos.y + grow.pos.y + (grow.size.y - ICON_PX) / 2.0;
-        let rect = egui::Rect::from_min_size(
-            egui::Pos2::new(icon_x, y),
-            egui::vec2(ICON_PX, ICON_PX),
-        );
+        let rect =
+            egui::Rect::from_min_size(egui::Pos2::new(icon_x, y), egui::vec2(ICON_PX, ICON_PX));
         // Closed fold -> chevron up (expand it), open foldable block -> chevron
         // down (collapse it). Rasterized once and cached by the Icons cache.
         let icon = if collapsed.contains(&row) {
@@ -389,7 +405,11 @@ pub(crate) fn draw_fold_icons(
             egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
             egui::Color32::from_gray(140),
         );
-        let resp = ui.interact(rect, egui::Id::new(("fold_icon", row)), egui::Sense::click());
+        let resp = ui.interact(
+            rect,
+            egui::Id::new(("fold_icon", row)),
+            egui::Sense::click(),
+        );
         if resp.clicked() {
             clicked.push(row);
         }
@@ -443,7 +463,9 @@ pub(crate) fn foldable_opens(content: &str, braces: &[BracePair]) -> Vec<usize> 
             .cloned()
             .collect();
         let after = tail_close.iter().find(|c| !c.is_whitespace());
-        if after.is_some_and(|&c| matches!(c, ';' | ',' | ')' | ']' | '>' | '}' | '.' | '=' | ':' | '<')) {
+        if after.is_some_and(|&c| {
+            matches!(c, ';' | ',' | ')' | ']' | '>' | '}' | '.' | '=' | ':' | '<')
+        }) {
             continue;
         }
         out.push(b.open);
@@ -507,7 +529,13 @@ mod tests {
     fn sibling_folds_coexist() {
         let content = "fn a() {\n    x();\n}\nfn b() {\n    y();\n}\n";
         //             012345678 9..16 17 18 19 20..27 28 29..36 37 38 39
-        let folds = vec![Fold { open: 7, close: 18 }, Fold { open: 27, close: 38 }];
+        let folds = vec![
+            Fold { open: 7, close: 18 },
+            Fold {
+                open: 27,
+                close: 38,
+            },
+        ];
         let view = build_fold_view(content, &folds);
         let markers: Vec<Option<usize>> = view.rows.iter().map(|r| r.marker).collect();
         // Rows: line 0 (fn a, marker), line 3 (fn b, marker), trailing empty.
@@ -546,7 +574,10 @@ mod tests {
     #[test]
     fn folded_display_uses_inline_marker() {
         let content = "fn a() {\n    x();\n}\nfn b() {\n    y();\n}\n";
-        let folds = vec![Fold { open: 27, close: 35 }];
+        let folds = vec![Fold {
+            open: 27,
+            close: 35,
+        }];
         let view = build_fold_view(content, &folds);
         assert_eq!(view.display, "fn a() {\n    x();\n}\nfn b() {â‹¯\n}\n");
         // Lines 0..3, the fold's closing line 5 and the trailing empty line.
@@ -568,7 +599,10 @@ mod tests {
         // Inserting at the marker char: unfolds, then maps onto the unfolded
         // text — '!' goes right after the opening '{'.
         let mut content = original.clone();
-        let mut folds = vec![Fold { open: 27, close: 35 }];
+        let mut folds = vec![Fold {
+            open: 27,
+            close: 35,
+        }];
         let view = build_fold_view(&content, &folds);
         let mut fb = FoldBuffer::with_view(&mut content, &mut folds, view);
         assert_eq!(fb.insert_text("!", egui::text::CharIndex(28)), 1);
@@ -578,7 +612,10 @@ mod tests {
         // Deleting exactly the marker char: unfolds and removes the (visible)
         // newline that the marker showed — nothing hidden is ever destroyed.
         let mut content = original.clone();
-        let mut folds = vec![Fold { open: 27, close: 35 }];
+        let mut folds = vec![Fold {
+            open: 27,
+            close: 35,
+        }];
         let view = build_fold_view(&content, &folds);
         let mut fb = FoldBuffer::with_view(&mut content, &mut folds, view);
         fb.delete_char_range(egui::text::CharIndex(28)..egui::text::CharIndex(29));

@@ -159,7 +159,10 @@ mod tests {
 
         // Duplicate the `let x` line and land on the copy (block 27..42).
         let caret = duplicate_lines(&mut c, 12, 12);
-        assert_eq!(c, "fn main() {\n    let x = 1;\n    let x = 1;\n    let y = 2;\n}\n");
+        assert_eq!(
+            c,
+            "fn main() {\n    let x = 1;\n    let x = 1;\n    let y = 2;\n}\n"
+        );
         assert_eq!(lines_span(&c, caret, caret), (27, 42));
 
         // Move the copied `let x` line down and back up.
@@ -167,7 +170,10 @@ mod tests {
         assert!(c[ns..ne].starts_with("    let x"));
         assert!(c.contains("    let y = 2;\n    let x = 1;\n"));
         move_lines(&mut c, ns, ne, -1).unwrap();
-        assert_eq!(c, "fn main() {\n    let x = 1;\n    let x = 1;\n    let y = 2;\n}\n");
+        assert_eq!(
+            c,
+            "fn main() {\n    let x = 1;\n    let x = 1;\n    let y = 2;\n}\n"
+        );
 
         // Delete a duplicated line, then the whole remaining block.
         delete_lines(&mut c, 12, 12);

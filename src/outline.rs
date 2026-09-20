@@ -1,7 +1,7 @@
 use eframe::egui::{self, Align, Layout, RichText};
 use egui_code_editor::Syntax;
 
-use crate::style::{header_label, Palette};
+use crate::style::{Palette, header_label};
 
 #[derive(Clone)]
 pub struct Symbol {
@@ -21,12 +21,7 @@ impl OutlinePanel {
         Self
     }
 
-    pub fn show(
-        &self,
-        ui: &mut egui::Ui,
-        palette: &Palette,
-        symbols: &[Symbol],
-    ) -> Option<usize> {
+    pub fn show(&self, ui: &mut egui::Ui, palette: &Palette, symbols: &[Symbol]) -> Option<usize> {
         ui.horizontal(|ui| {
             ui.label(header_label(ui, "Outline"));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -229,11 +224,7 @@ fn after_kw<'a>(line: &'a str, kw: &str) -> Option<&'a str> {
         .split(|c: char| c.is_whitespace() || c == '(' || c == '<')
         .next()?;
     let name = name.trim_end_matches(':');
-    if name.is_empty() {
-        None
-    } else {
-        Some(name)
-    }
+    if name.is_empty() { None } else { Some(name) }
 }
 
 fn after_const(line: &str) -> Option<&str> {

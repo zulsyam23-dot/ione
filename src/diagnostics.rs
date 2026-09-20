@@ -11,9 +11,9 @@ use eframe::egui::{self, Rect, Stroke};
 use egui_code_editor::Syntax;
 
 use crate::editor::folds::FoldView;
+use crate::guides::analyze_brackets;
 use crate::guides::brackets::BracketScan;
 use crate::guides::geometry::char_rect;
-use crate::guides::analyze_brackets;
 use crate::style::Palette;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -34,10 +34,20 @@ pub struct Diagnostic {
 
 impl Diagnostic {
     fn error(start: usize, end: usize, message: impl Into<String>) -> Self {
-        Self { severity: Severity::Error, start, end, message: message.into() }
+        Self {
+            severity: Severity::Error,
+            start,
+            end,
+            message: message.into(),
+        }
     }
     fn warning(start: usize, end: usize, message: impl Into<String>) -> Self {
-        Self { severity: Severity::Warning, start, end, message: message.into() }
+        Self {
+            severity: Severity::Warning,
+            start,
+            end,
+            message: message.into(),
+        }
     }
 }
 
@@ -45,7 +55,10 @@ impl Diagnostic {
 /// the mask-aware bracket scan (the scanner runs once and is shared with the
 /// editor overlay cache), plus the string/comment mask itself so callers that
 /// need it (auto-close, comment toggling) don't re-lex.
-pub fn analyze_with_scan(content: &str, syntax: &Syntax) -> (Vec<Diagnostic>, BracketScan, Vec<bool>) {
+pub fn analyze_with_scan(
+    content: &str,
+    syntax: &Syntax,
+) -> (Vec<Diagnostic>, BracketScan, Vec<bool>) {
     let mut out = Vec::new();
     let chars: Vec<char> = content.chars().collect();
     let (mask, _) = crate::editor::styling::mask_and_links(content, syntax);
@@ -55,13 +68,21 @@ pub fn analyze_with_scan(content: &str, syntax: &Syntax) -> (Vec<Diagnostic>, Br
     for p in &scan.pairs {
         if p.close == usize::MAX {
             let ch = chars.get(p.open).copied().unwrap_or('?');
-            out.push(Diagnostic::error(p.open, p.open + 1, format!("unclosed bracket `{ch}`")));
+            out.push(Diagnostic::error(
+                p.open,
+                p.open + 1,
+                format!("unclosed bracket `{ch}`"),
+            ));
         }
     }
     // Stray closes: `)`, `]`, `}` with no matching open.
     for &ci in &scan.unmatched_closes {
         let ch = chars.get(ci).copied().unwrap_or('?');
-        out.push(Diagnostic::error(ci, ci + 1, format!("unexpected closing bracket `{ch}`")));
+        out.push(Diagnostic::error(
+            ci,
+            ci + 1,
+            format!("unexpected closing bracket `{ch}`"),
+        ));
     }
 
     // Per-line checks: trailing whitespace and mixed indentation. Blank lines
@@ -72,14 +93,26 @@ pub fn analyze_with_scan(content: &str, syntax: &Syntax) -> (Vec<Diagnostic>, Br
         let lc: Vec<char> = line.chars().collect();
         let n = lc.len();
 
-        let ws = lc.iter().rposition(|c| *c != ' ' && *c != '\t').map(|i| i + 1).unwrap_or(0);
+        let ws = lc
+            .iter()
+            .rposition(|c| *c != ' ' && *c != '\t')
+            .map(|i| i + 1)
+            .unwrap_or(0);
         if ws > 0 && ws < n && lc[..ws].iter().any(|c| *c != ' ' && *c != '\t') {
-            out.push(Diagnostic::warning(idx + ws, idx + n, "trailing whitespace"));
+            out.push(Diagnostic::warning(
+                idx + ws,
+                idx + n,
+                "trailing whitespace",
+            ));
         }
 
         let lead = lc.iter().take_while(|c| **c == ' ' || **c == '\t').count();
         if lead > 0 && lc[..lead].contains(&'\t') && lc[..lead].contains(&' ') {
-            out.push(Diagnostic::warning(idx, idx + lead, "mixed indentation (tabs and spaces)"));
+            out.push(Diagnostic::warning(
+                idx,
+                idx + lead,
+                "mixed indentation (tabs and spaces)",
+            ));
         }
 
         idx += piece.chars().count();
@@ -112,7 +145,9 @@ pub fn draw_squiggles(
     let to_display = |real: usize| view.d2r.binary_search(&real).ok();
 
     for d in diags {
-        let Some(ds) = to_display(d.start) else { continue };
+        let Some(ds) = to_display(d.start) else {
+            continue;
+        };
         let Some(de) = to_display(d.end)
             .or_else(|| (d.end > d.start).then(|| to_display(d.end - 1)).flatten())
             .filter(|&de| de >= ds)
@@ -155,7 +190,11 @@ pub fn draw_squiggles(
                 egui::pos2(left, row_rect.top()),
                 egui::pos2(right, row_rect.bottom()),
             );
-            if ui.ctx().pointer_hover_pos().is_some_and(|p| rect.contains(p)) {
+            if ui
+                .ctx()
+                .pointer_hover_pos()
+                .is_some_and(|p| rect.contains(p))
+            {
                 hovered = Some(d);
             }
         }
@@ -183,7 +222,11 @@ pub fn draw_squiggles(
                             .strong()
                             .size(12.0),
                         );
-                        ui.label(egui::RichText::new(&d.message).color(palette.text).size(12.5));
+                        ui.label(
+                            egui::RichText::new(&d.message)
+                                .color(palette.text)
+                                .size(12.5),
+                        );
                     });
             });
     }
@@ -204,7 +247,8 @@ mod tests {
     use super::*;
 
     fn msgs(content: &str, syntax: Option<Syntax>) -> Vec<(Severity, String)> {
-        analyze_with_scan(content, &syntax.unwrap_or_else(Syntax::rust)).0
+        analyze_with_scan(content, &syntax.unwrap_or_else(Syntax::rust))
+            .0
             .into_iter()
             .map(|d| (d.severity, d.message))
             .collect()
@@ -213,18 +257,27 @@ mod tests {
     #[test]
     fn unmatched_brackets_are_errors() {
         let out = msgs("fn f() {\n    let x = (1;\n}\n", None);
-        assert!(out.iter().any(|(s, m)| *s == Severity::Error && m.contains("(")));
+        assert!(
+            out.iter()
+                .any(|(s, m)| *s == Severity::Error && m.contains("("))
+        );
     }
 
     #[test]
     fn stray_closing_bracket_is_an_error() {
         let out = msgs("let x = 1);\n", None);
-        assert!(out.iter().any(|(s, m)| *s == Severity::Error && m.contains(")")));
+        assert!(
+            out.iter()
+                .any(|(s, m)| *s == Severity::Error && m.contains(")"))
+        );
     }
 
     #[test]
     fn balanced_brackets_cause_no_bracket_errors() {
-        let out = msgs("fn f(a: [i32; 3]) {\n    // (comment)\n    let s = \"unclosed? no)\";\n}\n", None);
+        let out = msgs(
+            "fn f(a: [i32; 3]) {\n    // (comment)\n    let s = \"unclosed? no)\";\n}\n",
+            None,
+        );
         assert!(!out.iter().any(|(s, _)| *s == Severity::Error));
     }
 
@@ -239,7 +292,10 @@ mod tests {
     fn trailing_whitespace_is_a_warning_with_line_range() {
         let content = "let a = 1;   \nlet b = 2;\n";
         let d = analyze_with_scan(content, &Syntax::rust()).0;
-        let tws: Vec<&Diagnostic> = d.iter().filter(|d| d.message.contains("trailing")).collect();
+        let tws: Vec<&Diagnostic> = d
+            .iter()
+            .filter(|d| d.message.contains("trailing"))
+            .collect();
         assert_eq!(tws.len(), 1);
         assert_eq!(tws[0].start, 10); // chars 10..13 are the three trailing spaces
         assert_eq!(tws[0].end, 13);
@@ -252,7 +308,10 @@ mod tests {
     #[test]
     fn mixed_indentation_is_a_warning() {
         let out = msgs("if a {\n\t  let x = 1;\n}\n", None);
-        assert!(out.iter().any(|(s, m)| *s == Severity::Warning && m.contains("mixed")));
+        assert!(
+            out.iter()
+                .any(|(s, m)| *s == Severity::Warning && m.contains("mixed"))
+        );
         // Pure tabs or pure spaces: clean.
         let out = msgs("if a {\n\tlet x = 1;\n      let y = 2;\n}\n", None);
         assert!(!out.iter().any(|(_, m)| m.contains("mixed")));

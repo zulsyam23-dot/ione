@@ -10,11 +10,11 @@ use egui::text::LayoutJob;
 use egui_code_editor::highlighting::Links;
 use egui_code_editor::{ColorTheme, Syntax, Token, TokenType};
 
-use crate::guides::{analyze_brackets, EditorOverlay};
+use crate::guides::{EditorOverlay, analyze_brackets};
 use crate::style::Palette;
 
-use super::lexer;
 use super::FONT_SIZE;
+use super::lexer;
 
 /// Per-frame data produced by the layouter for the exact buffer+galley that
 /// will be painted (string/comment mask, bracket depth), cached by the
@@ -133,9 +133,13 @@ mod styling_tests {
     fn rainbow_brackets_colored_by_depth() {
         let syntax = Syntax::rust();
         let theme = ColorTheme::monocolor(true, "000000", "ffffff", "fff", "fff");
-        let overlay = EditorOverlay { bracket_guides: false, colorize_brackets: true };
+        let overlay = EditorOverlay {
+            bracket_guides: false,
+            colorize_brackets: true,
+        };
         let palette = Palette::dark();
-        let (job, _links, _styled) = layout_styled("a(b(c{d}))", &syntax, &theme, &overlay, &palette);
+        let (job, _links, _styled) =
+            layout_styled("a(b(c{d}))", &syntax, &theme, &overlay, &palette);
 
         let mut colored = Vec::new();
         for sec in &job.sections {

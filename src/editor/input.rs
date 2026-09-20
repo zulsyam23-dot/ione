@@ -73,8 +73,7 @@ pub(crate) fn handle_multi_claim(ui: &mut egui::Ui, editor_id: &str, tab: &mut T
                     ev,
                     Event::PointerButton { pressed: true, .. }
                         | Event::Key {
-                            key:
-                                egui::Key::ArrowLeft
+                            key: egui::Key::ArrowLeft
                                 | egui::Key::ArrowRight
                                 | egui::Key::ArrowUp
                                 | egui::Key::ArrowDown
@@ -90,10 +89,22 @@ pub(crate) fn handle_multi_claim(ui: &mut egui::Ui, editor_id: &str, tab: &mut T
                 if multi::is_batchable(ev) {
                     let e = match ev {
                         Event::Text(t) => multi::Edit::Insert(t.clone()),
-                        Event::Key { key: egui::Key::Backspace, .. } => multi::Edit::Backspace,
-                        Event::Key { key: egui::Key::Delete, .. } => multi::Edit::Delete,
-                        Event::Key { key: egui::Key::Enter, .. } => multi::Edit::Enter,
-                        Event::Key { key: egui::Key::Tab, .. } => multi::Edit::InsertTab,
+                        Event::Key {
+                            key: egui::Key::Backspace,
+                            ..
+                        } => multi::Edit::Backspace,
+                        Event::Key {
+                            key: egui::Key::Delete,
+                            ..
+                        } => multi::Edit::Delete,
+                        Event::Key {
+                            key: egui::Key::Enter,
+                            ..
+                        } => multi::Edit::Enter,
+                        Event::Key {
+                            key: egui::Key::Tab,
+                            ..
+                        } => multi::Edit::InsertTab,
                         _ => unreachable!(),
                     };
                     i.events.remove(n);
@@ -130,21 +141,28 @@ pub(crate) fn handle_completion_claim(ui: &mut egui::Ui, editor_id: &str, tab: &
         ui.ctx().input_mut(|i| {
             for (n, ev) in i.events.iter().enumerate() {
                 let take = match ev {
-                    Event::Key { key: egui::Key::ArrowUp, pressed: true, .. } => {
-                        Some(completion::Action::Prev)
-                    }
-                    Event::Key { key: egui::Key::ArrowDown, pressed: true, .. } => {
-                        Some(completion::Action::Next)
-                    }
+                    Event::Key {
+                        key: egui::Key::ArrowUp,
+                        pressed: true,
+                        ..
+                    } => Some(completion::Action::Prev),
+                    Event::Key {
+                        key: egui::Key::ArrowDown,
+                        pressed: true,
+                        ..
+                    } => Some(completion::Action::Next),
                     Event::Key {
                         key: egui::Key::Enter | egui::Key::Tab,
                         pressed: true,
                         repeat: false,
                         ..
                     } => Some(completion::Action::Accept),
-                    Event::Key { key: egui::Key::Escape, pressed: true, repeat: false, .. } => {
-                        Some(completion::Action::Close)
-                    }
+                    Event::Key {
+                        key: egui::Key::Escape,
+                        pressed: true,
+                        repeat: false,
+                        ..
+                    } => Some(completion::Action::Close),
                     Event::Key {
                         key:
                             egui::Key::ArrowLeft
@@ -154,9 +172,7 @@ pub(crate) fn handle_completion_claim(ui: &mut egui::Ui, editor_id: &str, tab: &
                         pressed: true,
                         ..
                     }
-                    | Event::PointerButton { pressed: true, .. } => {
-                        Some(completion::Action::Close)
-                    }
+                    | Event::PointerButton { pressed: true, .. } => Some(completion::Action::Close),
                     _ => None,
                 };
                 if let Some(a) = take {
@@ -232,7 +248,14 @@ pub(crate) fn text_editing_pass(
     let relevant = ui.ctx().input(|i| {
         i.events.iter().any(|ev| {
             matches!(ev, egui::Event::Text(t) if t.chars().count() == 1)
-                || matches!(ev, egui::Event::Key { pressed: true, repeat: false, .. })
+                || matches!(
+                    ev,
+                    egui::Event::Key {
+                        pressed: true,
+                        repeat: false,
+                        ..
+                    }
+                )
         })
     });
     if !relevant {

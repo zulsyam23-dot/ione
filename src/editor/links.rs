@@ -53,7 +53,10 @@ pub(crate) fn handle_links(text_edit: &TextEditOutput, links: &Links) {
                         } else {
                             url.to_string()
                         };
-                        ctx.open_url(egui::OpenUrl { url: url.clone(), new_tab: true });
+                        ctx.open_url(egui::OpenUrl {
+                            url: url.clone(),
+                            new_tab: true,
+                        });
                     }
                 }
             }

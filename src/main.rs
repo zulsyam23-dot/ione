@@ -1,32 +1,38 @@
 mod app;
-mod editor;
-mod icons;
-mod tabs;
-mod menu;
-mod guides;
-mod file_tree;
-mod outline;
 mod completion;
+mod diagnostics;
+mod editor;
+mod file_tree;
+mod fonts;
+mod guides;
+mod icons;
+mod loading;
+mod menu;
+mod outline;
 mod search;
+mod settings;
 mod style;
+mod tabs;
 mod terminal;
 mod theme;
-mod loading;
-mod fonts;
-mod diagnostics;
-mod settings;
 
 use eframe::egui;
-use style::{apply_style, Palette};
+use style::{Palette, apply_style};
 
 fn main() -> eframe::Result<()> {
     install_panic_hook();
-    let icon = load_icon();
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
+    let viewport = {
+        let builder = egui::ViewportBuilder::default()
             .with_inner_size([1200.0, 800.0])
-            .with_min_inner_size([600.0, 400.0])
-            .with_icon(icon),
+            .with_min_inner_size([600.0, 400.0]);
+        if let Some(icon) = load_icon() {
+            builder.with_icon(icon)
+        } else {
+            builder
+        }
+    };
+    let options = eframe::NativeOptions {
+        viewport,
         ..Default::default()
     };
     eframe::run_native(
@@ -40,17 +46,15 @@ fn main() -> eframe::Result<()> {
     )
 }
 
-fn load_icon() -> egui::IconData {
+fn load_icon() -> Option<egui::IconData> {
     let icon_bytes = include_bytes!("..\\assets\\icons\\app\\1770523897143.ico");
-    let image = image::load_from_memory(icon_bytes)
-        .expect("Failed to load icon")
-        .into_rgba8();
+    let image = image::load_from_memory(icon_bytes).ok()?.into_rgba8();
     let (width, height) = image.dimensions();
-    egui::IconData {
+    Some(egui::IconData {
         rgba: image.into_raw(),
         width,
         height,
-    }
+    })
 }
 
 fn setup_visuals(ctx: &egui::Context) {

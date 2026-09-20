@@ -27,9 +27,15 @@ pub(crate) fn analyze_brackets(chars: &[char], mask: &[bool]) -> BracketScan {
             if stack.last().is_some_and(|&(_, top)| top == kind) {
                 let (oi, top_kind) = stack.pop().unwrap();
                 depths[ci] = stack.len() as u8;
-                pairs.push(Pair { open: oi, close: ci });
+                pairs.push(Pair {
+                    open: oi,
+                    close: ci,
+                });
                 if top_kind == BRACE {
-                    brace_pairs.push(BracePair { open: oi, close: ci });
+                    brace_pairs.push(BracePair {
+                        open: oi,
+                        close: ci,
+                    });
                 }
             } else {
                 depths[ci] = 0;
@@ -38,14 +44,25 @@ pub(crate) fn analyze_brackets(chars: &[char], mask: &[bool]) -> BracketScan {
         }
     }
     for (oi, kind) in stack {
-        pairs.push(Pair { open: oi, close: usize::MAX });
+        pairs.push(Pair {
+            open: oi,
+            close: usize::MAX,
+        });
         if kind == BRACE {
-            brace_pairs.push(BracePair { open: oi, close: usize::MAX });
+            brace_pairs.push(BracePair {
+                open: oi,
+                close: usize::MAX,
+            });
         }
     }
     pairs.sort_by_key(|p| p.open);
     brace_pairs.sort_by_key(|p| p.open);
-    BracketScan { depths, pairs, brace_pairs, unmatched_closes }
+    BracketScan {
+        depths,
+        pairs,
+        brace_pairs,
+        unmatched_closes,
+    }
 }
 
 #[cfg(test)]
@@ -122,10 +139,7 @@ mod tests {
         assert_eq!(scan.depths[outer_open], 0);
         assert_eq!(scan.depths[outer_open + 1], 1);
         assert_eq!(
-            scan.pairs
-                .iter()
-                .filter(|p| p.close != usize::MAX)
-                .count(),
+            scan.pairs.iter().filter(|p| p.close != usize::MAX).count(),
             2
         );
     }
@@ -137,8 +151,13 @@ mod tests {
         let main_open = content.find('{').unwrap();
         let if_open = content.rfind('{').unwrap();
         let main_close = content.rfind('}').unwrap();
-        let if_close = content.match_indices('}').map(|(i, _)| i).find(|&i| i != main_close).unwrap();
-        let pairs: Vec<(usize, usize)> = scan.brace_pairs.iter().map(|b| (b.open, b.close)).collect();
+        let if_close = content
+            .match_indices('}')
+            .map(|(i, _)| i)
+            .find(|&i| i != main_close)
+            .unwrap();
+        let pairs: Vec<(usize, usize)> =
+            scan.brace_pairs.iter().map(|b| (b.open, b.close)).collect();
         assert!(pairs.contains(&(main_open, main_close)));
         assert!(pairs.contains(&(if_open, if_close)));
     }

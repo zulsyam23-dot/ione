@@ -118,10 +118,7 @@ mod tests {
         let loaded = load_recents();
         assert_eq!(loaded, list);
         assert_eq!(loaded.len(), MAX_RECENT);
-        assert_eq!(
-            loaded[0].file_name().unwrap().to_string_lossy(),
-            "f11.rs"
-        );
+        assert_eq!(loaded[0].file_name().unwrap().to_string_lossy(), "f11.rs");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

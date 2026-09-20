@@ -3,14 +3,13 @@
 /// inline `⋯` on the opening line, they never make extra rows), so numbers
 /// stay 1:1 with reality. A narrow strip on the left is reserved for the
 /// chevron fold-toggle icons.
-
 use eframe::egui::{self, TextBuffer, Ui};
 use egui::text::LayoutJob;
 use egui_code_editor::{ColorTheme, TokenType};
 
 use super::{FONT_SIZE, TEXT_ROWS};
 use crate::diagnostics::Severity;
-use crate::editor::folds::{draw_fold_icons, FoldView};
+use crate::editor::folds::{FoldView, draw_fold_icons};
 use crate::editor::styling::format_font;
 use crate::icons::Icons;
 use crate::style::Palette;
@@ -93,10 +92,8 @@ pub(crate) fn numlines_show(
             };
             let y = output.galley_pos.y + grow.pos.y + (grow.size.y - marker_h) / 2.0;
             let x = output.galley_pos.x + 2.0; // into the icon strip, left of the numbers
-            let rect = egui::Rect::from_min_size(
-                egui::Pos2::new(x, y),
-                egui::vec2(marker_w, marker_h),
-            );
+            let rect =
+                egui::Rect::from_min_size(egui::Pos2::new(x, y), egui::vec2(marker_w, marker_h));
             let color = match sev {
                 Severity::Error => palette.diag_error,
                 Severity::Warning => palette.diag_warning,

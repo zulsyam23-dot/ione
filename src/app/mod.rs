@@ -10,7 +10,7 @@ use crate::loading::LoadingOverlay;
 use crate::menu;
 use crate::outline::OutlinePanel;
 use crate::search::SearchPanel;
-use crate::style::{frame, header_label, Palette};
+use crate::style::{Palette, frame, header_label};
 use crate::tabs::TabManager;
 use crate::terminal::TerminalPanel;
 use crate::theme::Theme;
@@ -190,7 +190,9 @@ impl EditorApp {
     /// workspace files. Enter/↑/↓/Esc are read from the raw events (the
     /// single-line box consumes Enter as "done"), and a click opens too.
     fn show_quick_open(&mut self, ctx: &egui::Context, commands: &mut Vec<AppCommand>) {
-        let Some(q) = &mut self.quick_open else { return };
+        let Some(q) = &mut self.quick_open else {
+            return;
+        };
         let root = self.file_tree.root.clone();
         let (esc, enter, up, down) = ctx.input(|i| {
             let mut r = (false, false, false, false);
@@ -232,8 +234,7 @@ impl EditorApp {
                     .iter()
                     .filter(|p| {
                         query.is_empty()
-                            || p
-                                .file_name()
+                            || p.file_name()
                                 .unwrap_or_default()
                                 .to_string_lossy()
                                 .to_lowercase()
@@ -414,7 +415,15 @@ impl eframe::App for EditorApp {
                 if self.tabs.is_empty() {
                     self.show_empty_state(ui, &ctx);
                 } else if let Some(tab) = self.tabs.active_tab_mut() {
-                    crate::editor::show_editor(ui, tab, self.theme, palette.editor_bg, &guides, &palette, &mut self.icons);
+                    crate::editor::show_editor(
+                        ui,
+                        tab,
+                        self.theme,
+                        palette.editor_bg,
+                        &guides,
+                        &palette,
+                        &mut self.icons,
+                    );
                 }
 
                 // Editor-area splash while a heavy file is being opened.
@@ -437,9 +446,11 @@ impl eframe::App for EditorApp {
         // Persistent divider at the explorer's right edge, painted last so no
         // panel content (tree rows, scrollbars) can ever cover it.
         if let Some(r) = sidebar_rect {
-            root_ui
-                .painter()
-                .vline(r.right() - 0.5, r.y_range(), egui::Stroke::new(1.0, self.palette.border));
+            root_ui.painter().vline(
+                r.right() - 0.5,
+                r.y_range(),
+                egui::Stroke::new(1.0, self.palette.border),
+            );
         }
 
         self.process_commands(commands, &ctx);

@@ -48,11 +48,15 @@ pub fn apply_font(ctx: &egui::Context, name: &str) -> Result<(), String> {
     let filename = font_filename(name).ok_or_else(|| format!("Unknown font: {name}"))?;
     let path = font_dir().join(filename);
     let bytes = std::fs::read(&path).map_err(|_| {
-        format!("Font file not found:\n{}\n\nPlace the TTF file there.", path.display())
+        format!(
+            "Font file not found:\n{}\n\nPlace the TTF file there.",
+            path.display()
+        )
     })?;
     if !is_font_file(&bytes) {
         return Err(format!(
-            "Not a valid font file:\n{}\n\nFile is corrupted or missing.", path.display()
+            "Not a valid font file:\n{}\n\nFile is corrupted or missing.",
+            path.display()
         ));
     }
 

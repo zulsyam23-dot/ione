@@ -122,4 +122,3 @@ fn build_visuals(p: &Palette) -> egui::Visuals {
 
     visuals
 }
-

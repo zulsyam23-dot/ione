@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use eframe::egui::{self, Color32};
 
-use crate::style::{apply_style, Palette};
+use crate::style::{Palette, apply_style};
 use crate::theme::Theme;
 
 pub(super) const HANDLE: f32 = 6.0;
@@ -20,15 +20,36 @@ pub(super) fn documents_dir() -> Option<PathBuf> {
 
 pub(super) fn load_logo(ctx: &egui::Context) -> egui::TextureHandle {
     let bytes = include_bytes!("..\\..\\assets\\icons\\app\\1770523897143.ico");
-    let img = image::load_from_memory(bytes)
-        .expect("Failed to load logo")
-        .into_rgba8();
-    let (w, h) = img.dimensions();
-    let color = egui::ColorImage::from_rgba_premultiplied([w as usize, h as usize], img.as_raw());
+    let color = decode_logo(bytes).unwrap_or_else(fallback_logo);
     ctx.load_texture("ione_logo", color, egui::TextureOptions::LINEAR)
 }
 
-pub(super) fn drag_vertical_splitter(ui: &mut egui::Ui, color: Color32, frac: &mut f32, total_h: f32) {
+fn decode_logo(bytes: &[u8]) -> Option<egui::ColorImage> {
+    let img = image::load_from_memory(bytes).ok()?.into_rgba8();
+    let (w, h) = img.dimensions();
+    Some(egui::ColorImage::from_rgba_premultiplied(
+        [w as usize, h as usize],
+        img.as_raw(),
+    ))
+}
+
+fn fallback_logo() -> egui::ColorImage {
+    let size = [32, 32];
+    let mut pixels = vec![Color32::from_rgb(15, 23, 42); size[0] * size[1]];
+    for y in 6..26 {
+        for x in 6..26 {
+            pixels[y * size[0] + x] = Color32::from_rgb(59, 130, 246);
+        }
+    }
+    egui::ColorImage::new(size, pixels)
+}
+
+pub(super) fn drag_vertical_splitter(
+    ui: &mut egui::Ui,
+    color: Color32,
+    frac: &mut f32,
+    total_h: f32,
+) {
     let (rect, resp) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), HANDLE),
         egui::Sense::drag(),
@@ -101,8 +122,16 @@ fn match_ranges(content: &str, query: &str, case_sensitive: bool) -> Vec<(usize,
     out
 }
 
-pub(super) fn replace_first(content: &mut String, query: &str, replacement: &str, case_sensitive: bool) {
-    if let Some((s, e)) = match_ranges(content, query, case_sensitive).into_iter().next() {
+pub(super) fn replace_first(
+    content: &mut String,
+    query: &str,
+    replacement: &str,
+    case_sensitive: bool,
+) {
+    if let Some((s, e)) = match_ranges(content, query, case_sensitive)
+        .into_iter()
+        .next()
+    {
         content.replace_range(s..e, replacement);
     }
 }
@@ -170,6 +199,15 @@ pub(super) fn find_prev_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_logo_bytes_use_fallback_image() {
+        assert!(decode_logo(b"not-an-icon").is_none());
+
+        let fallback = fallback_logo();
+        assert_eq!(fallback.size, [32, 32]);
+        assert_eq!(fallback.pixels.len(), 32 * 32);
+    }
 
     #[test]
     fn case_insensitive_replace_survives_length_changing_fold() {

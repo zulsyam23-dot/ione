@@ -195,7 +195,11 @@ fn checked(label: &str, on: bool) -> String {
     }
 }
 
-pub fn handle_shortcuts(ctx: &egui::Context, commands: &mut Vec<AppCommand>, ctrl_k_pending: &mut bool) {
+pub fn handle_shortcuts(
+    ctx: &egui::Context,
+    commands: &mut Vec<AppCommand>,
+    ctrl_k_pending: &mut bool,
+) {
     ctx.input(|i| {
         let ctrl = i.modifiers.ctrl && !i.modifiers.alt;
         let chord = *ctrl_k_pending;

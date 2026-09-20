@@ -57,7 +57,9 @@ impl FileTree {
         entries.sort_by(|a, b| {
             let a_dir = a.path().is_dir();
             let b_dir = b.path().is_dir();
-            b_dir.cmp(&a_dir).then_with(|| a.file_name().cmp(&b.file_name()))
+            b_dir
+                .cmp(&a_dir)
+                .then_with(|| a.file_name().cmp(&b.file_name()))
         });
 
         for entry in entries {
@@ -141,134 +143,131 @@ impl FileTree {
             .id_salt("file_tree_scroll")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-        for entry in &entries {
-            // Cap visual indent so deep folders can't push rows past the panel
-            // edge (which made `available_width` go negative and stopped the
-            // rows rendering).
-            const MAX_INDENT: f32 = 256.0;
-            let indent = (entry.depth as f32 * 16.0).min(MAX_INDENT);
+                for entry in &entries {
+                    // Cap visual indent so deep folders can't push rows past the panel
+                    // edge (which made `available_width` go negative and stopped the
+                    // rows rendering).
+                    const MAX_INDENT: f32 = 256.0;
+                    let indent = (entry.depth as f32 * 16.0).min(MAX_INDENT);
 
-            // Full-row hover highlight like Zed's file explorer.
-            let row_height = ui.spacing().interact_size.y + 2.0;
-            let row_rect = egui::Rect::from_min_size(
-                ui.cursor().min,
-                egui::vec2(ui.available_width().max(0.0), row_height),
-            );
-            let hovered = ui.rect_contains_pointer(row_rect);
-            let fill = if hovered {
-                palette.panel_hover
-            } else {
-                egui::Color32::TRANSPARENT
-            };
-            let stroke = if hovered {
-                egui::Stroke::new(1.0, palette.border)
-            } else {
-                egui::Stroke::NONE
-            };
-            ui.painter().rect(
-                row_rect,
-                0.0,
-                fill,
-                stroke,
-                egui::StrokeKind::Inside,
-            );
+                    // Full-row hover highlight like Zed's file explorer.
+                    let row_height = ui.spacing().interact_size.y + 2.0;
+                    let row_rect = egui::Rect::from_min_size(
+                        ui.cursor().min,
+                        egui::vec2(ui.available_width().max(0.0), row_height),
+                    );
+                    let hovered = ui.rect_contains_pointer(row_rect);
+                    let fill = if hovered {
+                        palette.panel_hover
+                    } else {
+                        egui::Color32::TRANSPARENT
+                    };
+                    let stroke = if hovered {
+                        egui::Stroke::new(1.0, palette.border)
+                    } else {
+                        egui::Stroke::NONE
+                    };
+                    ui.painter()
+                        .rect(row_rect, 0.0, fill, stroke, egui::StrokeKind::Inside);
 
-            ui.horizontal(|ui| {
-                if entry.is_dir {
-                    // Left-click "+": fixed left column on every folder row, so
-                    // nesting never shifts it sideways (and never the scrollbar).
-                    let plus = ui
-                        .add(
-                            egui::Button::new(
-                                egui::RichText::new("+").size(14.0).color(palette.text_muted),
-                            )
-                            .frame(false),
-                        )
-                        .on_hover_text("Add file or folder");
-                    egui::Popup::menu(&plus).show(|ui| {
-                        if ui.button("New File").clicked() {
-                            commands.push(AppCommand::NewFileIn(entry.path.clone()));
+                    ui.horizontal(|ui| {
+                        if entry.is_dir {
+                            // Left-click "+": fixed left column on every folder row, so
+                            // nesting never shifts it sideways (and never the scrollbar).
+                            let plus = ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new("+")
+                                            .size(14.0)
+                                            .color(palette.text_muted),
+                                    )
+                                    .frame(false),
+                                )
+                                .on_hover_text("Add file or folder");
+                            egui::Popup::menu(&plus).show(|ui| {
+                                if ui.button("New File").clicked() {
+                                    commands.push(AppCommand::NewFileIn(entry.path.clone()));
+                                    ui.close();
+                                }
+                                if ui.button("New Folder").clicked() {
+                                    commands.push(AppCommand::NewFolder(Some(entry.path.clone())));
+                                    ui.close();
+                                }
+                            });
+                        } else {
+                            // Keep the icon columns aligned with folder rows above.
+                            ui.add_space(14.0);
+                        }
+                        ui.add_space(indent);
+                        if entry.is_dir {
+                            let chevron = if self.expanded.contains(&entry.path) {
+                                Icon::ChevronDown
+                            } else {
+                                Icon::ChevronRight
+                            };
+                            icons.image_button(ui, chevron, 12.0, "");
+                        } else {
+                            ui.add_space(16.0);
+                        }
+
+                        let file_icon = if entry.is_dir {
+                            Icon::Folder
+                        } else {
+                            file_icon(&entry.name)
+                        };
+                        icons.image_button(ui, file_icon, 14.0, "");
+
+                        let color = if entry.is_dir {
+                            palette.text
+                        } else {
+                            palette.text_muted
+                        };
+                        ui.label(egui::RichText::new(&entry.name).color(color));
+                    });
+
+                    let row_id = ui.make_persistent_id(&entry.path);
+                    let row_resp = ui.interact(row_rect, row_id, egui::Sense::click());
+                    if row_resp.clicked() {
+                        if entry.is_dir {
+                            toggle_path = Some(entry.path.clone());
+                        } else {
+                            clicked_path = Some(entry.path.clone());
+                        }
+                    }
+                    row_resp.context_menu(|ui| {
+                        if entry.is_dir {
+                            if ui.button("New File").clicked() {
+                                commands.push(AppCommand::NewFileIn(entry.path.clone()));
+                                ui.close();
+                            }
+                            if ui.button("New Folder").clicked() {
+                                commands.push(AppCommand::NewFolder(Some(entry.path.clone())));
+                                ui.close();
+                            }
+                        }
+                        if ui.button("Open").clicked() {
+                            if entry.is_dir {
+                                toggle_path = Some(entry.path.clone());
+                            } else {
+                                commands.push(AppCommand::OpenFilePath(entry.path.clone()));
+                            }
                             ui.close();
                         }
-                        if ui.button("New Folder").clicked() {
-                            commands.push(AppCommand::NewFolder(Some(entry.path.clone())));
+                        if ui.button("Rename").clicked() {
+                            commands.push(AppCommand::RenamePath(entry.path.clone()));
+                            ui.close();
+                        }
+                        if ui.button("Delete").clicked() {
+                            commands.push(AppCommand::DeletePath(entry.path.clone()));
+                            ui.close();
+                        }
+                        if ui.button("Copy Path").clicked() {
+                            commands.push(AppCommand::CopyPath(entry.path.clone()));
                             ui.close();
                         }
                     });
-                } else {
-                    // Keep the icon columns aligned with folder rows above.
-                    ui.add_space(14.0);
+                    ui.add_space(1.0);
                 }
-                ui.add_space(indent);
-                if entry.is_dir {
-                    let chevron = if self.expanded.contains(&entry.path) {
-                        Icon::ChevronDown
-                    } else {
-                        Icon::ChevronRight
-                    };
-                    icons.image_button(ui, chevron, 12.0, "");
-                } else {
-                    ui.add_space(16.0);
-                }
-
-                let file_icon = if entry.is_dir {
-                    Icon::Folder
-                } else {
-                    file_icon(&entry.name)
-                };
-                icons.image_button(ui, file_icon, 14.0, "");
-
-                let color = if entry.is_dir {
-                    palette.text
-                } else {
-                    palette.text_muted
-                };
-                ui.label(egui::RichText::new(&entry.name).color(color));
-            });
-
-            let row_id = ui.make_persistent_id(&entry.path);
-            let row_resp = ui.interact(row_rect, row_id, egui::Sense::click());
-            if row_resp.clicked() {
-                if entry.is_dir {
-                    toggle_path = Some(entry.path.clone());
-                } else {
-                    clicked_path = Some(entry.path.clone());
-                }
-            }
-            row_resp.context_menu(|ui| {
-                if entry.is_dir {
-                    if ui.button("New File").clicked() {
-                        commands.push(AppCommand::NewFileIn(entry.path.clone()));
-                        ui.close();
-                    }
-                    if ui.button("New Folder").clicked() {
-                        commands.push(AppCommand::NewFolder(Some(entry.path.clone())));
-                        ui.close();
-                    }
-                }
-                if ui.button("Open").clicked() {
-                    if entry.is_dir {
-                        toggle_path = Some(entry.path.clone());
-                    } else {
-                        commands.push(AppCommand::OpenFilePath(entry.path.clone()));
-                    }
-                    ui.close();
-                }
-                if ui.button("Rename").clicked() {
-                    commands.push(AppCommand::RenamePath(entry.path.clone()));
-                    ui.close();
-                }
-                if ui.button("Delete").clicked() {
-                    commands.push(AppCommand::DeletePath(entry.path.clone()));
-                    ui.close();
-                }
-                if ui.button("Copy Path").clicked() {
-                    commands.push(AppCommand::CopyPath(entry.path.clone()));
-                    ui.close();
-                }
-            });
-            ui.add_space(1.0);
-        }
             });
 
         if let Some(path) = toggle_path {
@@ -325,9 +324,18 @@ mod tests {
         tree.refresh();
 
         let names: Vec<String> = tree.entries.iter().map(|e| e.name.clone()).collect();
-        let a = names.iter().position(|n| n == "a").expect("folder a listed");
-        let inner = names.iter().position(|n| n == "inner.rs").expect("child below a");
-        let root = names.iter().position(|n| n == "root.rs").expect("root file listed");
+        let a = names
+            .iter()
+            .position(|n| n == "a")
+            .expect("folder a listed");
+        let inner = names
+            .iter()
+            .position(|n| n == "inner.rs")
+            .expect("child below a");
+        let root = names
+            .iter()
+            .position(|n| n == "root.rs")
+            .expect("root file listed");
         // The folder's children must appear immediately under the folder, before\
         // the parent's other (unexpanded) files.
         assert!(a < inner && inner < root, "order was {names:?}");

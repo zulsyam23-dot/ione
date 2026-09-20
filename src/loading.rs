@@ -73,7 +73,11 @@ impl LoadingOverlay {
         // Advance through frames by accumulated delays (loop when past the end).
         // ponytail: playback slow-down factor, since loading-file.gif frame delays are tiny.
         let slow = 2.5f64;
-        let total: f64 = self.frames.iter().map(|(_, d)| d.as_secs_f64() * slow).sum();
+        let total: f64 = self
+            .frames
+            .iter()
+            .map(|(_, d)| d.as_secs_f64() * slow)
+            .sum();
         let mut t = if total == 0.0 {
             0.0
         } else {
@@ -98,7 +102,11 @@ impl LoadingOverlay {
             .show(ctx, |ui| {
                 // Translucent veil, not an opaque blackout — the app behind
                 // stays visible while the GIF prepares.
-                ui.painter().rect_filled(screen, 0.0, Color32::from_rgba_unmultiplied(0, 0, 0, 140));
+                ui.painter().rect_filled(
+                    screen,
+                    0.0,
+                    Color32::from_rgba_unmultiplied(0, 0, 0, 140),
+                );
 
                 let (tex, _) = &self.frames[self.frame_idx];
                 let size = self.raw[self.frame_idx].0.size;
@@ -106,10 +114,7 @@ impl LoadingOverlay {
                 let disp_w = 140.0_f32;
                 let disp_h = disp_w * aspect;
                 let center = screen.center();
-                let img_rect = egui::Rect::from_center_size(
-                    center,
-                    egui::vec2(disp_w, disp_h),
-                );
+                let img_rect = egui::Rect::from_center_size(center, egui::vec2(disp_w, disp_h));
                 ui.painter().image(
                     tex.id(),
                     img_rect,

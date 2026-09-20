@@ -76,7 +76,11 @@ pub enum Edit {
 /// range, zero-width) so subsequent keystrokes keep appending. Ranges are
 /// resolved against the ORIGINAL buffer, so the math is exact regardless of
 /// how earlier ranges shift the text. `None` when nothing was edited.
-pub fn apply_edit(content: &mut String, ranges: &[(usize, usize)], edit: &Edit) -> Option<Vec<(usize, usize)>> {
+pub fn apply_edit(
+    content: &mut String,
+    ranges: &[(usize, usize)],
+    edit: &Edit,
+) -> Option<Vec<(usize, usize)>> {
     if ranges.is_empty() {
         return None;
     }
@@ -159,7 +163,9 @@ pub fn draw_selection(
     let to_display = |real: usize| -> Option<usize> { view.d2r.iter().position(|&r| r == real) };
     for &(rs, re) in ranges {
         let Some(ds) = to_display(rs) else { continue };
-        let Some(de) = to_display(re.saturating_sub(1)) else { continue };
+        let Some(de) = to_display(re.saturating_sub(1)) else {
+            continue;
+        };
         let start = crate::guides::geometry::char_rect(galley, origin, ds);
         let end = crate::guides::geometry::char_rect(galley, origin, de + 1);
         let top = start.top().min(end.top());

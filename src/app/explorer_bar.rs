@@ -3,9 +3,9 @@ use eframe::egui::{self, Align, Align2, Layout};
 use crate::icons::Icon;
 use crate::style::header_label;
 
-use super::utils::{drag_vertical_splitter, load_logo, HANDLE};
 use super::AppCommand;
 use super::EditorApp;
+use super::utils::{HANDLE, drag_vertical_splitter, load_logo};
 
 impl EditorApp {
     pub(super) fn show_sidebar(&mut self, commands: &mut Vec<AppCommand>, ui: &mut egui::Ui) {
@@ -43,7 +43,8 @@ impl EditorApp {
         let outline_h = (total_h - tree_h - HANDLE).max(40.0);
 
         ui.allocate_ui(egui::vec2(total_w, tree_h), |ui| {
-            self.file_tree.show(ui, &mut self.icons, &self.palette, commands);
+            self.file_tree
+                .show(ui, &mut self.icons, &self.palette, commands);
         });
 
         drag_vertical_splitter(ui, self.palette.border, &mut self.outline_frac, total_h);
@@ -111,10 +112,8 @@ impl EditorApp {
         );
         y += title_h + 10.0;
 
-        let sub_rc = egui::Rect::from_center_size(
-            egui::pos2(cx, y + sub_h / 2.0),
-            egui::vec2(500.0, sub_h),
-        );
+        let sub_rc =
+            egui::Rect::from_center_size(egui::pos2(cx, y + sub_h / 2.0), egui::vec2(500.0, sub_h));
         ui.painter().text(
             sub_rc.center(),
             Align2::CENTER_CENTER,

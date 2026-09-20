@@ -5,20 +5,30 @@ use eframe::egui::{self, Align, Color32, Layout, RichText};
 use crate::diagnostics::Severity;
 use crate::icons::Icon;
 use crate::menu;
-use crate::style::{frame, header_label, Palette};
+use crate::style::{Palette, frame, header_label};
 use crate::tabs::TabManager;
 
 use super::AppCommand;
 use super::EditorApp;
 
 impl EditorApp {
-    pub(super) fn show_title_bar(&mut self, root_ui: &mut egui::Ui, commands: &mut Vec<AppCommand>) {
+    pub(super) fn show_title_bar(
+        &mut self,
+        root_ui: &mut egui::Ui,
+        commands: &mut Vec<AppCommand>,
+    ) {
         egui::Panel::top("title_bar")
             .frame(frame(self.palette.bg, Color32::TRANSPARENT, 0, 3))
             .show(root_ui, |ui| {
                 ui.horizontal(|ui| {
                     egui::menu::MenuBar::new().ui(ui, |ui| {
-                        menu::show_menu_bar(ui, commands, &self.editor_font, &self.guides(), &self.recent_files);
+                        menu::show_menu_bar(
+                            ui,
+                            commands,
+                            &self.editor_font,
+                            &self.guides(),
+                            &self.recent_files,
+                        );
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.add_space(8.0);
@@ -45,8 +55,12 @@ impl EditorApp {
                     if let Some(tab) = tabs.active_tab() {
                         let lines = tab.content.chars().filter(|&c| c == '\n').count() + 1;
                         ui.label(
-                            RichText::new(format!("Ln {}, Col {}  ({lines} lines)", tab.cursor_line + 1, tab.cursor_col + 1))
-                                .color(p.text),
+                            RichText::new(format!(
+                                "Ln {}, Col {}  ({lines} lines)",
+                                tab.cursor_line + 1,
+                                tab.cursor_col + 1
+                            ))
+                            .color(p.text),
                         );
                         ui.separator();
                         ui.label(RichText::new("UTF-8").color(p.text_muted));
@@ -84,7 +98,10 @@ impl EditorApp {
                             ui.separator();
                         }
                         ui.separator();
-                        ui.label(RichText::new(format!("v{}", env!("CARGO_PKG_VERSION"))).color(p.text_muted));
+                        ui.label(
+                            RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                                .color(p.text_muted),
+                        );
                     });
                 });
             });
@@ -99,7 +116,12 @@ impl EditorApp {
         let mut close_idx: Option<usize> = None;
 
         egui::Panel::top("tab_bar")
-            .frame(frame(ui.visuals().extreme_bg_color, Color32::TRANSPARENT, 0, 5))
+            .frame(frame(
+                ui.visuals().extreme_bg_color,
+                Color32::TRANSPARENT,
+                0,
+                5,
+            ))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.add_space(6.0);
@@ -112,16 +134,17 @@ impl EditorApp {
                             text
                         };
                         let color = if active { p.text } else { p.text_muted };
-                        let fill = if active { p.panel_active } else { Color32::TRANSPARENT };
-                        let tab_frame = egui::Frame::NONE
-                            .fill(fill)
-                            .corner_radius(0.0);
-                        let response = tab_frame.show(ui, |ui| {
-                            ui.add(
-                                egui::Button::new(RichText::new(&label).color(color)),
-                            )
-                        })
-                        .inner;
+                        let fill = if active {
+                            p.panel_active
+                        } else {
+                            Color32::TRANSPARENT
+                        };
+                        let tab_frame = egui::Frame::NONE.fill(fill).corner_radius(0.0);
+                        let response = tab_frame
+                            .show(ui, |ui| {
+                                ui.add(egui::Button::new(RichText::new(&label).color(color)))
+                            })
+                            .inner;
 
                         if response.clicked() {
                             switch_to = Some(i);

@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use egui_code_editor::highlighting::Links;
 use egui_code_editor::Syntax;
+use egui_code_editor::highlighting::Links;
 
 use crate::guides::brackets::BracketScan;
 
@@ -158,7 +158,8 @@ impl Tab {
     ) -> u64 {
         let mut color_theme = theme.to_color_theme();
         color_theme.bg = editor_bg;
-        let style_key = crate::editor::styling::style_key(&color_theme, overlay, palette, &self.syntax);
+        let style_key =
+            crate::editor::styling::style_key(&color_theme, overlay, palette, &self.syntax);
         let hash = crate::diagnostics::hash_content(&self.content);
         if hash == self.diag_hash && self.cache.style_key == style_key {
             return hash;
@@ -296,11 +297,7 @@ impl TabManager {
     }
 
     pub fn detect_syntax(path: &PathBuf) -> Syntax {
-        match path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-        {
+        match path.extension().and_then(|e| e.to_str()).unwrap_or("") {
             "rs" | "rust" => Syntax::rust(),
             "py" => Syntax::python(),
             "lua" => Syntax::lua(),
@@ -311,24 +308,101 @@ impl TabManager {
                 .with_comment("//")
                 .with_comment_multiline(["/*", "*/"])
                 .with_keywords([
-                    "async", "await", "break", "case", "catch", "class", "const", "continue",
-                    "default", "delete", "do", "else", "export", "extends", "finally", "for",
-                    "from", "function", "get", "if", "import", "in", "instanceof", "let", "new",
-                    "of", "return", "set", "static", "switch", "this", "throw", "try", "typeof",
-                    "var", "void", "while", "yield",
+                    "async",
+                    "await",
+                    "break",
+                    "case",
+                    "catch",
+                    "class",
+                    "const",
+                    "continue",
+                    "default",
+                    "delete",
+                    "do",
+                    "else",
+                    "export",
+                    "extends",
+                    "finally",
+                    "for",
+                    "from",
+                    "function",
+                    "get",
+                    "if",
+                    "import",
+                    "in",
+                    "instanceof",
+                    "let",
+                    "new",
+                    "of",
+                    "return",
+                    "set",
+                    "static",
+                    "switch",
+                    "this",
+                    "throw",
+                    "try",
+                    "typeof",
+                    "var",
+                    "void",
+                    "while",
+                    "yield",
                 ])
                 .with_special(["false", "null", "true", "undefined"]),
             "ts" | "tsx" | "mts" | "cts" => Syntax::new("typescript")
                 .with_comment("//")
                 .with_comment_multiline(["/*", "*/"])
                 .with_keywords([
-                    "abstract", "any", "async", "await", "break", "case", "catch", "class",
-                    "const", "continue", "declare", "default", "delete", "do", "else", "enum",
-                    "export", "extends", "finally", "for", "from", "function", "get", "if",
-                    "implements", "import", "in", "infer", "instanceof", "interface", "is",
-                    "keyof", "let", "namespace", "never", "new", "of", "readonly", "return",
-                    "set", "static", "switch", "this", "throw", "try", "type", "typeof", "var",
-                    "void", "while", "yield",
+                    "abstract",
+                    "any",
+                    "async",
+                    "await",
+                    "break",
+                    "case",
+                    "catch",
+                    "class",
+                    "const",
+                    "continue",
+                    "declare",
+                    "default",
+                    "delete",
+                    "do",
+                    "else",
+                    "enum",
+                    "export",
+                    "extends",
+                    "finally",
+                    "for",
+                    "from",
+                    "function",
+                    "get",
+                    "if",
+                    "implements",
+                    "import",
+                    "in",
+                    "infer",
+                    "instanceof",
+                    "interface",
+                    "is",
+                    "keyof",
+                    "let",
+                    "namespace",
+                    "never",
+                    "new",
+                    "of",
+                    "readonly",
+                    "return",
+                    "set",
+                    "static",
+                    "switch",
+                    "this",
+                    "throw",
+                    "try",
+                    "type",
+                    "typeof",
+                    "var",
+                    "void",
+                    "while",
+                    "yield",
                 ])
                 .with_types([
                     "boolean", "number", "object", "string", "symbol", "unknown", "void",
@@ -337,7 +411,15 @@ impl TabManager {
             "html" | "htm" => Syntax::new("html").with_comment_multiline(["<!--", "-->"]),
             "css" => Syntax::new("css")
                 .with_comment_multiline(["/*", "*/"])
-                .with_keywords(["@font-face", "@import", "@keyframes", "@media", "auto", "inherit", "none"]),
+                .with_keywords([
+                    "@font-face",
+                    "@import",
+                    "@keyframes",
+                    "@media",
+                    "auto",
+                    "inherit",
+                    "none",
+                ]),
             "json" => Syntax::new("json")
                 .with_comment_multiline(["/*", "*/"])
                 .with_special(["false", "null", "true"]),
@@ -352,30 +434,91 @@ impl TabManager {
                 .with_keywords([
                     "auto", "break", "case", "char", "const", "continue", "default", "do",
                     "double", "else", "enum", "extern", "float", "for", "goto", "if", "int",
-                    "long", "register", "return", "short", "signed", "sizeof", "static",
-                    "struct", "switch", "typedef", "union", "unsigned", "void", "volatile",
-                    "while",
+                    "long", "register", "return", "short", "signed", "sizeof", "static", "struct",
+                    "switch", "typedef", "union", "unsigned", "void", "volatile", "while",
                 ])
-                .with_types(["size_t", "int8_t", "int16_t", "int32_t", "int64_t", "uint8_t", "uint16_t", "uint32_t", "uint64_t"]),
+                .with_types([
+                    "size_t", "int8_t", "int16_t", "int32_t", "int64_t", "uint8_t", "uint16_t",
+                    "uint32_t", "uint64_t",
+                ]),
             "cc" | "cpp" | "cxx" | "hpp" => Syntax::new("cpp")
                 .with_comment("//")
                 .with_comment_multiline(["/*", "*/"])
                 .with_keywords([
-                    "auto", "break", "case", "catch", "class", "const", "constexpr", "continue",
-                    "default", "delete", "do", "else", "enum", "explicit", "extern", "for",
-                    "friend", "if", "inline", "namespace", "new", "operator", "private",
-                    "protected", "public", "return", "sizeof", "static", "struct", "switch",
-                    "template", "this", "throw", "try", "typedef", "typename", "union",
-                    "using", "virtual", "void", "while",
+                    "auto",
+                    "break",
+                    "case",
+                    "catch",
+                    "class",
+                    "const",
+                    "constexpr",
+                    "continue",
+                    "default",
+                    "delete",
+                    "do",
+                    "else",
+                    "enum",
+                    "explicit",
+                    "extern",
+                    "for",
+                    "friend",
+                    "if",
+                    "inline",
+                    "namespace",
+                    "new",
+                    "operator",
+                    "private",
+                    "protected",
+                    "public",
+                    "return",
+                    "sizeof",
+                    "static",
+                    "struct",
+                    "switch",
+                    "template",
+                    "this",
+                    "throw",
+                    "try",
+                    "typedef",
+                    "typename",
+                    "union",
+                    "using",
+                    "virtual",
+                    "void",
+                    "while",
                 ])
-                .with_types(["bool", "char", "double", "float", "int", "long", "short", "size_t", "string", "vector"]),
+                .with_types([
+                    "bool", "char", "double", "float", "int", "long", "short", "size_t", "string",
+                    "vector",
+                ]),
             "go" => Syntax::new("go")
                 .with_comment("//")
                 .with_comment_multiline(["/*", "*/"])
                 .with_keywords([
-                    "break", "case", "chan", "const", "continue", "default", "defer", "else",
-                    "fallthrough", "for", "func", "go", "goto", "if", "import", "interface",
-                    "map", "package", "range", "return", "select", "struct", "switch", "type",
+                    "break",
+                    "case",
+                    "chan",
+                    "const",
+                    "continue",
+                    "default",
+                    "defer",
+                    "else",
+                    "fallthrough",
+                    "for",
+                    "func",
+                    "go",
+                    "goto",
+                    "if",
+                    "import",
+                    "interface",
+                    "map",
+                    "package",
+                    "range",
+                    "return",
+                    "select",
+                    "struct",
+                    "switch",
+                    "type",
                     "var",
                 ])
                 .with_special(["false", "nil", "true"]),
@@ -383,13 +526,55 @@ impl TabManager {
                 .with_comment("//")
                 .with_comment_multiline(["/*", "*/"])
                 .with_keywords([
-                    "abstract", "boolean", "break", "byte", "case", "catch", "char", "class",
-                    "const", "continue", "default", "do", "double", "else", "enum", "extends",
-                    "final", "finally", "float", "for", "goto", "if", "implements", "import",
-                    "instanceof", "int", "interface", "long", "native", "new", "package",
-                    "private", "protected", "public", "return", "short", "static", "strictfp",
-                    "super", "switch", "synchronized", "this", "throw", "throws", "transient",
-                    "try", "void", "volatile", "while",
+                    "abstract",
+                    "boolean",
+                    "break",
+                    "byte",
+                    "case",
+                    "catch",
+                    "char",
+                    "class",
+                    "const",
+                    "continue",
+                    "default",
+                    "do",
+                    "double",
+                    "else",
+                    "enum",
+                    "extends",
+                    "final",
+                    "finally",
+                    "float",
+                    "for",
+                    "goto",
+                    "if",
+                    "implements",
+                    "import",
+                    "instanceof",
+                    "int",
+                    "interface",
+                    "long",
+                    "native",
+                    "new",
+                    "package",
+                    "private",
+                    "protected",
+                    "public",
+                    "return",
+                    "short",
+                    "static",
+                    "strictfp",
+                    "super",
+                    "switch",
+                    "synchronized",
+                    "this",
+                    "throw",
+                    "throws",
+                    "transient",
+                    "try",
+                    "void",
+                    "volatile",
+                    "while",
                 ])
                 .with_special(["false", "null", "true"]),
             _ => Syntax::new("plain"),

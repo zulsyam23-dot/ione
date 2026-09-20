@@ -11,9 +11,7 @@ use super::utils::{
     apply_egui_theme, documents_dir, find_next_range, find_prev_range, replace_all_in_content,
     replace_first,
 };
-use super::{
-    AppCommand, NamingKind, NamingState, QuickOpen, RenameState,
-};
+use super::{AppCommand, NamingKind, NamingState, QuickOpen, RenameState};
 
 /// `Some(new.join(rest))` when `p` lives under `old` (itself included).
 fn remap_under(p: &Path, old: &Path, new: &Path) -> Option<PathBuf> {
@@ -22,11 +20,7 @@ fn remap_under(p: &Path, old: &Path, new: &Path) -> Option<PathBuf> {
 
 impl EditorApp {
     pub(super) fn auto_save(&mut self, ctx: &egui::Context) {
-        let has_dirty = self
-            .tabs
-            .tabs
-            .iter()
-            .any(|t| t.dirty && t.path.is_some());
+        let has_dirty = self.tabs.tabs.iter().any(|t| t.dirty && t.path.is_some());
         if has_dirty {
             // Wake once, at the next 2s deadline — not every 500ms on a timer.
             let interval = std::time::Duration::from_secs(2);
@@ -81,7 +75,9 @@ impl EditorApp {
         self.file_tree.refresh();
         for tab in self.tabs.tabs.iter_mut() {
             let Some(tp) = tab.path.clone() else { continue };
-            let Some(np) = remap_under(&tp, path, &new_path) else { continue };
+            let Some(np) = remap_under(&tp, path, &new_path) else {
+                continue;
+            };
             tab.path = Some(np.clone());
             tab.name = np
                 .file_name()
@@ -102,19 +98,16 @@ impl EditorApp {
             return;
         }
         self.file_tree.refresh();
-        self.tabs.tabs.retain(|tab| tab.path.as_deref() != Some(path));
+        self.tabs
+            .tabs
+            .retain(|tab| tab.path.as_deref() != Some(path));
     }
 
     pub(super) fn process_commands(&mut self, commands: Vec<AppCommand>, ctx: &egui::Context) {
         for cmd in commands {
             match cmd {
                 AppCommand::NewFile => {
-                    let count = self
-                        .tabs
-                        .tabs
-                        .iter()
-                        .filter(|t| t.path.is_none())
-                        .count();
+                    let count = self.tabs.tabs.iter().filter(|t| t.path.is_none()).count();
                     let prefill = if count == 0 {
                         "untitled.rs".to_string()
                     } else {
@@ -206,10 +199,7 @@ impl EditorApp {
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_default();
-                    self.renaming = Some(RenameState {
-                        path,
-                        input: name,
-                    });
+                    self.renaming = Some(RenameState { path, input: name });
                 }
                 AppCommand::DeletePath(path) => {
                     self.delete_path(&path);
@@ -335,14 +325,17 @@ impl EditorApp {
                             crate::editor::styling::mask_and_links(&tab.content, &tab.syntax);
                         let chars: Vec<char> = tab.content.chars().collect();
                         let scan = crate::guides::analyze_brackets(&chars, &mask);
-                        let opens: Vec<usize> = crate::editor::folds::foldable_opens(
-                            &tab.content,
-                            &scan.brace_pairs,
-                        );
+                        let opens: Vec<usize> =
+                            crate::editor::folds::foldable_opens(&tab.content, &scan.brace_pairs);
                         // `cursor_line` is 1-based (gutter numbering); fold
                         // helpers take a 0-based line.
                         let line = tab.cursor_line.saturating_sub(1);
-                        crate::editor::folds::toggle_fold(&mut tab.folds, &opens, &tab.content, line);
+                        crate::editor::folds::toggle_fold(
+                            &mut tab.folds,
+                            &opens,
+                            &tab.content,
+                            line,
+                        );
                     }
                 }
                 AppCommand::Unfold => {

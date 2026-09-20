@@ -206,7 +206,10 @@ fn number_token(chars: &[char], i: usize, out: &mut Vec<Token>) -> usize {
 }
 
 fn line_comment_end(chars: &[char], start: usize) -> Option<usize> {
-    chars[start + 2..].iter().position(|&c| c == '\n').map(|k| start + 2 + k)
+    chars[start + 2..]
+        .iter()
+        .position(|&c| c == '\n')
+        .map(|k| start + 2 + k)
 }
 
 /// End of a nested `/* … */` region (Rust nests block comments).
@@ -284,7 +287,11 @@ fn char_literal_end(chars: &[char], qi: usize) -> Option<usize> {
         } else if j < n {
             j += 1;
         }
-        return if j < n && chars[j] == '\'' { Some(j + 1) } else { None };
+        return if j < n && chars[j] == '\'' {
+            Some(j + 1)
+        } else {
+            None
+        };
     }
     if j + 1 < n && chars[j + 1] == '\'' {
         Some(j + 2)
@@ -361,20 +368,26 @@ fn classify_rust(cls: &mut [u8], chars: &[char]) {
                 continue;
             }
         }
-        if chars[i] == 'r' && let Some(h) = raw_open(chars, i) {
+        if chars[i] == 'r'
+            && let Some(h) = raw_open(chars, i)
+        {
             let e = raw_end(chars, i, h).unwrap_or(n);
             mark(cls, i..e, STR);
             i = e;
             continue;
         }
         if chars[i] == 'b' && i + 1 < n {
-            if chars[i + 1] == 'r' && let Some(h) = raw_open(chars, i + 1) {
+            if chars[i + 1] == 'r'
+                && let Some(h) = raw_open(chars, i + 1)
+            {
                 let e = raw_end(chars, i + 1, h).unwrap_or(n);
                 mark(cls, i..e, STR);
                 i = e;
                 continue;
             }
-            if chars[i + 1] == '\'' && let Some(e) = char_literal_end(chars, i + 1) {
+            if chars[i + 1] == '\''
+                && let Some(e) = char_literal_end(chars, i + 1)
+            {
                 mark(cls, i..e, STR);
                 i = e;
                 continue;
@@ -478,8 +491,20 @@ fn classify_generic(cls: &mut [u8], chars: &[char], syntax: &Syntax) {
 /// Keywords after which a `/` may begin a regex literal (they are followed by an
 /// expression, not an operand).
 const JS_EXPR_PREFIX: [&str; 14] = [
-    "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "case",
-    "throw", "do", "else", "yield", "await",
+    "return",
+    "typeof",
+    "instanceof",
+    "in",
+    "of",
+    "new",
+    "delete",
+    "void",
+    "case",
+    "throw",
+    "do",
+    "else",
+    "yield",
+    "await",
 ];
 
 /// JS/TS scanner. The two traps the generic scanner falls into:
@@ -509,7 +534,9 @@ fn js_scan_code(cls: &mut [u8], chars: &[char], mut i: usize, stop_at_close_brac
             continue;
         }
         if has(chars, i, "/*") {
-            let e = chars[i + 2..].windows(2).position(|w| w == ['*', '/'])
+            let e = chars[i + 2..]
+                .windows(2)
+                .position(|w| w == ['*', '/'])
                 .map(|k| i + 2 + k + 2)
                 .unwrap_or(n);
             mark(cls, i..e, COMMENT);
@@ -533,7 +560,10 @@ fn js_scan_code(cls: &mut [u8], chars: &[char], mut i: usize, stop_at_close_brac
         if c == '/' {
             // JSX closing/self-closing tag (`</div>`, `<br />`) — never a regex.
             let after_tag = i > 0 && chars[i - 1] == '<';
-            if expect_regex && !after_tag && let Some(e) = js_regex_end(chars, i) {
+            if expect_regex
+                && !after_tag
+                && let Some(e) = js_regex_end(chars, i)
+            {
                 mark(cls, i..e, STR);
                 i = e;
                 expect_regex = false;
@@ -585,7 +615,8 @@ fn js_scan_code(cls: &mut [u8], chars: &[char], mut i: usize, stop_at_close_brac
         if c == '+' || c == '-' {
             // `++` / `--` postfix keeps the previous operand: `i++ / 2` is
             // division, so the `/` must not be treated as a regex.
-            if i > 1 && chars[i - 1] == c && (chars[i - 2].is_alphanumeric() || chars[i - 2] == ')') {
+            if i > 1 && chars[i - 1] == c && (chars[i - 2].is_alphanumeric() || chars[i - 2] == ')')
+            {
                 i += 1;
                 expect_regex = false;
                 continue;
@@ -704,7 +735,10 @@ mod tests {
             "fn f() { let c = '\\u{7D}'; }\n",
             "fn f() { let c = b'['; let d = b'\"'; }\n",
         ] {
-            assert!(!mask_errs(src, &Syntax::rust()), "unexpected errors in {src}");
+            assert!(
+                !mask_errs(src, &Syntax::rust()),
+                "unexpected errors in {src}"
+            );
         }
     }
 
@@ -730,7 +764,10 @@ mod tests {
 
     #[test]
     fn rust_tokens_keep_lifetimes_and_strings_sane() {
-        let toks = rust_tokens("fn f<'a>(x: &'a str) { let s = \"hi\"; g(1); }", &Syntax::rust());
+        let toks = rust_tokens(
+            "fn f<'a>(x: &'a str) { let s = \"hi\"; g(1); }",
+            &Syntax::rust(),
+        );
         let strs: Vec<usize> = toks
             .iter()
             .filter(|t| matches!(t.ty(), TokenType::Str(_)))
@@ -753,7 +790,10 @@ mod tests {
         assert!(!mask_errs(src, &js()));
         // An unbalanced bracket inside `${…}` must still be flagged.
         let src = "const s = `a ${foo(1,2} b`; let y = 2;\n";
-        assert!(mask_errs(src, &js()), "unclosed paren inside interpolation missed");
+        assert!(
+            mask_errs(src, &js()),
+            "unclosed paren inside interpolation missed"
+        );
     }
 
     #[test]

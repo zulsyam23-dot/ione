@@ -162,9 +162,8 @@ impl Icons {
             height: 128,
             maintain_aspect_ratio: true,
         };
-        egui_extras::image::load_svg_bytes_with_size(svg.as_bytes(), hint, &options).unwrap_or_else(
-            |_| egui::ColorImage::filled([128, 128], self.color),
-        )
+        egui_extras::image::load_svg_bytes_with_size(svg.as_bytes(), hint, &options)
+            .unwrap_or_else(|_| egui::ColorImage::filled([128, 128], self.color))
     }
 
     /// Return the texture for an icon, rasterized at natural size (24px).

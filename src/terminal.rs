@@ -4,7 +4,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, StrokeKind};
+use eframe::egui::{
+    self, Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, StrokeKind,
+};
 use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 
 use crate::style::Palette;
@@ -115,18 +117,14 @@ impl TerminalPanel {
         if let Some(dir) = &self.cwd {
             cmd.cwd(dir);
         }
-        let child = match pair
-            .slave
-            .spawn_command(cmd)
-            .or_else(|_| {
-                let mut fb = CommandBuilder::new("powershell");
-                fb.arg("-NoProfile");
-                if let Some(dir) = &self.cwd {
-                    fb.cwd(dir);
-                }
-                pair.slave.spawn_command(fb)
-            })
-        {
+        let child = match pair.slave.spawn_command(cmd).or_else(|_| {
+            let mut fb = CommandBuilder::new("powershell");
+            fb.arg("-NoProfile");
+            if let Some(dir) = &self.cwd {
+                fb.cwd(dir);
+            }
+            pair.slave.spawn_command(fb)
+        }) {
             Ok(c) => Some(c),
             Err(e) => {
                 s.error = Some(format!("failed to start shell (pwsh/powershell): {e}"));
@@ -173,7 +171,10 @@ impl TerminalPanel {
                         // Answer cursor position reports so ConPTY/PowerShell don't hang.
                         let mut i = 0;
                         while i < data.len() {
-                            if data[i] == 0x1b && data.get(i + 2) == Some(&b'n') && data.get(i + 1) == Some(&b'[') {
+                            if data[i] == 0x1b
+                                && data.get(i + 2) == Some(&b'n')
+                                && data.get(i + 1) == Some(&b'[')
+                            {
                                 response.extend_from_slice(b"\x1b[1;1R");
                                 i += 3;
                             } else {
@@ -189,12 +190,12 @@ impl TerminalPanel {
                             }
                         }
 
-                    let mut parser = parser.lock().unwrap_or_else(|e| e.into_inner());
-                    parser.process(&filtered);
-                    drop(parser);
-                    if repaint.load(Ordering::Relaxed) {
-                        ctx.request_repaint();
-                    }
+                        let mut parser = parser.lock().unwrap_or_else(|e| e.into_inner());
+                        parser.process(&filtered);
+                        drop(parser);
+                        if repaint.load(Ordering::Relaxed) {
+                            ctx.request_repaint();
+                        }
                     }
                     Err(_) => break,
                 }
@@ -259,7 +260,11 @@ impl TerminalPanel {
             for i in 0..self.sessions.len() {
                 let is_active = i == self.active;
                 let label = format!("Terminal {}", i + 1);
-                let color = if is_active { palette.text } else { palette.text_muted };
+                let color = if is_active {
+                    palette.text
+                } else {
+                    palette.text_muted
+                };
                 let fill = if is_active {
                     palette.panel_active
                 } else {
@@ -410,8 +415,7 @@ impl TerminalPanel {
                 if x + glyph_w > rect.max.x + f32::EPSILON {
                     break;
                 }
-                let cell_rect =
-                    Rect::from_min_size(Pos2::new(x, y), egui::vec2(glyph_w, row_h));
+                let cell_rect = Rect::from_min_size(Pos2::new(x, y), egui::vec2(glyph_w, row_h));
 
                 let is_cursor = focused && !scrolled && row == cursor_row && col == cursor_col;
                 let selected = sel_allowed && in_selection(sel, row as u16, col as u16);
@@ -442,7 +446,13 @@ impl TerminalPanel {
                     } else {
                         vt100_color_to_egui(cell.fgcolor(), palette, false)
                     };
-                    painter.text(cell_rect.min, Align2::LEFT_TOP, contents, font_id.clone(), fg);
+                    painter.text(
+                        cell_rect.min,
+                        Align2::LEFT_TOP,
+                        contents,
+                        font_id.clone(),
+                        fg,
+                    );
                 }
             }
         }
@@ -452,7 +462,12 @@ impl TerminalPanel {
             let cx = start_col + cursor_col as f32 * glyph_w;
             let cy = start_row + cursor_row as f32 * row_h;
             let cursor_rect = Rect::from_min_size(Pos2::new(cx, cy), egui::vec2(glyph_w, row_h));
-            painter.rect_stroke(cursor_rect, 0.0, Stroke::new(1.5, palette.accent), StrokeKind::Inside);
+            painter.rect_stroke(
+                cursor_rect,
+                0.0,
+                Stroke::new(1.5, palette.accent),
+                StrokeKind::Inside,
+            );
         }
 
         let cols = s.cols;
@@ -479,38 +494,49 @@ impl TerminalPanel {
                             self.send_active_key(*key);
                         }
                         egui::Event::PointerButton {
-                            pos, button, pressed: true, ..
-                        } if mouse_mode != vt100::MouseProtocolMode::None && rect.contains(*pos) => {
+                            pos,
+                            button,
+                            pressed: true,
+                            ..
+                        } if mouse_mode != vt100::MouseProtocolMode::None
+                            && rect.contains(*pos) =>
+                        {
                             clear = true;
                             let (col, row) = pos_to_cell(*pos, rect, glyph_w, row_h, cols, rows);
-                            self.send_active(&format!(
-                                "\x1b[<{};{};{}M",
-                                mouse_button_code(*button),
-                                col + 1,
-                                row + 1
-                            )
-                            .into_bytes());
+                            self.send_active(
+                                &format!(
+                                    "\x1b[<{};{};{}M",
+                                    mouse_button_code(*button),
+                                    col + 1,
+                                    row + 1
+                                )
+                                .into_bytes(),
+                            );
                         }
                         egui::Event::PointerButton {
-                            pos, button, pressed: false, ..
+                            pos,
+                            button,
+                            pressed: false,
+                            ..
                         } if mouse_mode != vt100::MouseProtocolMode::None
                             && mouse_mode != vt100::MouseProtocolMode::Press
                             && rect.contains(*pos) =>
                         {
                             let (col, row) = pos_to_cell(*pos, rect, glyph_w, row_h, cols, rows);
-                            self.send_active(&format!(
-                                "\x1b[<{};{};{}m",
-                                mouse_button_code(*button),
-                                col + 1,
-                                row + 1
-                            )
-                            .into_bytes());
+                            self.send_active(
+                                &format!(
+                                    "\x1b[<{};{};{}m",
+                                    mouse_button_code(*button),
+                                    col + 1,
+                                    row + 1
+                                )
+                                .into_bytes(),
+                            );
                         }
                         egui::Event::PointerMoved(pos) => {
-                            let motion =
-                                (mouse_mode == vt100::MouseProtocolMode::ButtonMotion
-                                    && i.pointer.primary_down())
-                                    || mouse_mode == vt100::MouseProtocolMode::AnyMotion;
+                            let motion = (mouse_mode == vt100::MouseProtocolMode::ButtonMotion
+                                && i.pointer.primary_down())
+                                || mouse_mode == vt100::MouseProtocolMode::AnyMotion;
                             if motion {
                                 let (col, row) =
                                     pos_to_cell(*pos, rect, glyph_w, row_h, cols, rows);
@@ -522,15 +548,13 @@ impl TerminalPanel {
                         }
                         egui::Event::MouseWheel { delta, .. }
                             if mouse_mode != vt100::MouseProtocolMode::None
-                                && i
-                                    .pointer
+                                && i.pointer
                                     .latest_pos()
                                     .map(|p| rect.contains(p))
                                     .unwrap_or(false) =>
                         {
                             if let Some(pos) = i.pointer.latest_pos() {
-                                let (col, row) =
-                                    pos_to_cell(pos, rect, glyph_w, row_h, cols, rows);
+                                let (col, row) = pos_to_cell(pos, rect, glyph_w, row_h, cols, rows);
                                 let btn = if delta.y > 0.0 { 64 } else { 65 };
                                 self.send_active(
                                     &format!("\x1b[<{btn};{};{}M", col + 1, row + 1).into_bytes(),
@@ -590,8 +614,7 @@ impl TerminalPanel {
                 for event in &i.events {
                     if let egui::Event::MouseWheel { delta, .. } = event {
                         if delta.y != 0.0
-                            && i
-                                .pointer
+                            && i.pointer
                                 .latest_pos()
                                 .map(|p| rect.contains(p))
                                 .unwrap_or(false)
@@ -622,7 +645,8 @@ impl TerminalPanel {
         });
         if middle_paste {
             self.focused = true;
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
     }
 
@@ -655,9 +679,20 @@ impl TerminalPanel {
     }
 }
 
-fn pos_to_cell(pos: Pos2, rect: Rect, glyph_w: f32, row_h: f32, cols: u16, rows: u16) -> (u16, u16) {
-    let col = ((pos.x - rect.min.x) / glyph_w).floor().clamp(0.0, (cols - 1) as f32) as u16;
-    let row = ((pos.y - rect.min.y) / row_h).floor().clamp(0.0, (rows - 1) as f32) as u16;
+fn pos_to_cell(
+    pos: Pos2,
+    rect: Rect,
+    glyph_w: f32,
+    row_h: f32,
+    cols: u16,
+    rows: u16,
+) -> (u16, u16) {
+    let col = ((pos.x - rect.min.x) / glyph_w)
+        .floor()
+        .clamp(0.0, (cols - 1) as f32) as u16;
+    let row = ((pos.y - rect.min.y) / row_h)
+        .floor()
+        .clamp(0.0, (rows - 1) as f32) as u16;
     (col, row)
 }
 
