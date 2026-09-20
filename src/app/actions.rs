@@ -63,6 +63,7 @@ impl EditorApp {
         // Keep the workspace alive when the root itself is renamed.
         if self.file_tree.root.as_deref() == Some(path) {
             self.file_tree.root = Some(new_path.clone());
+            self.git.set_root(self.file_tree.root.clone());
         }
         // Folders keep their expansion state; open tabs below the renamed
         // folder (or the renamed file itself) keep pointing at new_path,
@@ -187,11 +188,13 @@ impl EditorApp {
                 AppCommand::OpenFolder => {
                     if let Some(folder) = rfd::FileDialog::new().pick_folder() {
                         self.file_tree.set_root(folder);
+                        self.git.set_root(self.file_tree.root.clone());
                     }
                 }
                 AppCommand::SetRoot(path) => {
                     if path.is_dir() {
                         self.file_tree.set_root(path);
+                        self.git.set_root(self.file_tree.root.clone());
                     }
                 }
                 AppCommand::RenamePath(path) => {
@@ -249,6 +252,9 @@ impl EditorApp {
                 }
                 AppCommand::ToggleTerminal => {
                     self.terminal.toggle(ctx);
+                }
+                AppCommand::ToggleGit => {
+                    self.git.toggle();
                 }
                 AppCommand::RefreshFileTree => {
                     self.file_tree.refresh();

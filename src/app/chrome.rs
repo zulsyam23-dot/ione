@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use eframe::egui::{self, Align, Color32, Layout, RichText};
 
 use crate::diagnostics::Severity;
+use crate::git::GitPanel;
 use crate::icons::Icon;
 use crate::menu;
 use crate::style::{Palette, frame, header_label};
@@ -39,12 +40,24 @@ impl EditorApp {
                         {
                             commands.push(AppCommand::ToggleTerminal);
                         }
+                        if self
+                            .icons
+                            .image_button(ui, Icon::Git, 14.0, "Toggle Source Control (Ctrl+Shift+G)")
+                            .clicked()
+                        {
+                            commands.push(AppCommand::ToggleGit);
+                        }
                     });
                 });
             });
     }
 
-    pub(super) fn show_status_bar(root_ui: &mut egui::Ui, tabs: &TabManager, branch: &str) {
+    pub(super) fn show_status_bar(
+        root_ui: &mut egui::Ui,
+        tabs: &TabManager,
+        branch: &str,
+        git: &GitPanel,
+    ) {
         let p = Palette::dark();
         egui::Panel::bottom("status_bar")
             .frame(frame(p.bg, p.border, 0, 5))
@@ -98,6 +111,10 @@ impl EditorApp {
                             ui.separator();
                         }
                         ui.separator();
+                        if let Some(g) = git.status_bar_suffix() {
+                            ui.label(RichText::new(g).color(p.text_muted));
+                            ui.separator();
+                        }
                         ui.label(
                             RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
                                 .color(p.text_muted),

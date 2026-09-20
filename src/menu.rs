@@ -126,6 +126,13 @@ pub fn show_menu_bar(
             }
             ui.separator();
             if ui
+                .add(egui::Button::new("Toggle Source Control").shortcut_text("Ctrl+Shift+G"))
+                .clicked()
+            {
+                commands.push(AppCommand::ToggleGit);
+                ui.close();
+            }
+            if ui
                 .add(egui::Button::new("Toggle Terminal").shortcut_text("Ctrl+`"))
                 .clicked()
             {
@@ -253,6 +260,9 @@ pub fn handle_shortcuts(
         if ctrl && i.modifiers.shift && !chord {
             if i.key_pressed(egui::Key::S) {
                 commands.push(AppCommand::SaveAs);
+            }
+            if i.key_pressed(egui::Key::G) {
+                commands.push(AppCommand::ToggleGit);
             }
             if i.key_pressed(egui::Key::OpenBracket) {
                 commands.push(AppCommand::Fold);

@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use eframe::egui::{self, Align, Layout};
 
 use crate::file_tree::FileTree;
+use crate::git::GitPanel;
 use crate::guides::EditorOverlay;
 use crate::icons::Icons;
 use crate::loading::LoadingOverlay;
@@ -43,6 +44,7 @@ pub enum AppCommand {
     ToggleSearch,
     ToggleSidebar,
     ToggleTerminal,
+    ToggleGit,
     RefreshFileTree,
     SetTheme(Theme),
     SetEditorFont(String),
@@ -65,6 +67,7 @@ pub struct EditorApp {
     pub search: SearchPanel,
     pub outline: OutlinePanel,
     pub terminal: TerminalPanel,
+    pub git: GitPanel,
     pub theme: Theme,
     pub icons: Icons,
     pub show_sidebar: bool,
@@ -123,6 +126,7 @@ impl Default for EditorApp {
             search: SearchPanel::new(),
             outline: OutlinePanel::new(),
             terminal: TerminalPanel::new(),
+            git: GitPanel::new(),
             theme: Theme::default(),
             icons: Icons::new(),
             show_sidebar: true,
@@ -348,7 +352,7 @@ impl eframe::App for EditorApp {
 
         // Bottom status bar. Added FIRST so it sits innermost (against the
         // screen bottom); the terminal (added after) stacks above it.
-        Self::show_status_bar(root_ui, &self.tabs, &self.branch());
+        Self::show_status_bar(root_ui, &self.tabs, &self.branch(), &self.git);
 
         // Bottom terminal, as a root panel so egui reserves its space natively.
         // (A nested Panel::bottom inside CentralPanel does not shrink the editor's
@@ -385,6 +389,32 @@ impl eframe::App for EditorApp {
                     });
                     self.terminal.show(ui, &self.palette, &ctx);
                 });
+        }
+
+        // Right-side Source Control (Git) panel.
+        if self.git.visible {
+            let git_rect = egui::Panel::right("git_panel")
+                .exact_size(280.0)
+                .show_separator_line(false)
+                .frame(frame(self.palette.panel, self.palette.border, 0, 8))
+                .show(root_ui, |ui| {
+                    self.git.show(
+                        ui,
+                        &mut self.icons,
+                        &self.palette,
+                        self.file_tree.root.as_ref(),
+                        &mut commands,
+                    );
+                })
+                .response
+                .rect;
+            // Persistent divider at the panel's left edge, painted last so no
+            // panel content (rows, scrollbars) can ever cover it.
+            root_ui.painter().vline(
+                git_rect.left() + 0.5,
+                git_rect.y_range(),
+                egui::Stroke::new(1.0, self.palette.border),
+            );
         }
 
         egui::CentralPanel::default_margins()

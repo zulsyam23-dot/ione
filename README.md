@@ -42,6 +42,7 @@
 | **Error/Warning decoration** | Squiggle merah/kuning + tooltip + count di status bar — deteksi kurung akurat per bahasa: JS/TS/JSX/TSX (template & regex), lifetime/raw-string Rust, tanpa error palsu |
 | **Bracket guides** | Panduan pasangan kurung + rainbow brackets (bisa dimatikan via View → Editor Guides) |
 | **Outline panel** | Navigasi struktur file aktif |
+| **Git Panel** | Status, stage/unstage, commit, dan diff berwarna per-file |
 | **Tema Dark/Light** | Hitam murni & putih, sudut tajam; GitHub Light masih **beta** (ada konfirmasi saat memilih) |
 | **Ganti font editor** | 5 font coding gratis: JetBrains Mono, Fira Code, dsb. |
 | **Splash screen** | Animasi startup + overlay sesaat saat membuka file besar |
@@ -123,6 +124,7 @@ cargo run
 | Tutup Tab | `Ctrl+W` |
 | Find & Replace | `Ctrl+H` |
 | Toggle File Explorer | `Ctrl+L` |
+| Toggle Source Control | `Ctrl+Shift+G` |
 | Toggle Terminal | `` Ctrl+` `` |
 | Pilih kejadian kata berikutnya | `Ctrl+D` |
 | Lipat / Buka blok | `Ctrl+Shift+[` / `Ctrl+Shift+]` |
@@ -156,6 +158,7 @@ src/
 ├── file_tree.rs    # Explorer pohon folder
 ├── outline.rs      # Panel outline
 ├── search.rs       # Panel find & replace
+├── git.rs          # Panel Source Control (status, stage, commit, diff)
 ├── terminal.rs     # Terminal PowerShell multi-session
 ├── menu.rs         # Menu bar & shortcut global
 ├── fonts.rs        # Daftar & pemuatan font coding
@@ -180,8 +183,8 @@ assets/
 
 - [ ] Menyimpan pengaturan (font, tema, ukuran) secara persisten
 - [ ] Auto-complete dasar untuk bahasa populer
-- [ ] Panel Git (status, commit, staging)
-- [ ] Recent files
+- [x] Recent files
+- [x] Panel Git (status, stage, commit, diff) — blame/pull/push/branch-switch menyusul
 - [ ] Minimap & breadcrumb
 - [ ] Integrasi build/run → terminal
 - [ ] Diagnostik eksternal (`cargo check` / LSP) di samping cek bawaan

@@ -4,6 +4,7 @@ mod diagnostics;
 mod editor;
 mod file_tree;
 mod fonts;
+mod git;
 mod guides;
 mod icons;
 mod loading;

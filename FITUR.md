@@ -54,6 +54,17 @@
 - **Tahan kedalaman tak terbatas:** indentasi baris dibatasi otomatis sehingga pohon sesedalam apa pun tetap tampil rapi — tidak ada baris yang pernah "hilang" meski foldernya sangat dalam.
 - **Garis pemisah permanen** di tepi kanan explorer (antara explorer ↔ editor) digambar di lapisan teratas, jadi selalu terlihat — berapa pun isi/tinggi pohon atau status scroll.
 
+### 🌿 Git Panel (Source Control)
+- **Panel sisi kanan** dengan daftar perubahan di-group: **Staged Changes**, **Changes** (worktree), **Untracked** — masing-masing dengan penghitung.
+- **Status akurat** via `git status --porcelain -uall`: huruf status berwarna (A hijau, M kuning, D merah, U abu), path rusak/detached HEAD ditangani.
+- **Stage/Unstage** per-file (tombol `+`/`−` per baris, atau menu klik-kanan) dan **Stage All / Unstage All** (`git add -A` / `git reset` index-only).
+- **Commit** lewat kotak pesan multi-baris (Enter+Ctrl) — hanya index yang di-commit; tombol nonaktif jika belum ada perubahan ter-stage.
+- **Diff per-file**: klik baris → tampil unified diff berwarna (+hijau/−merah/@@ biru) di bawah daftar; tombol **Open File** untuk membuka ke editor. File terhapus/untracked diberi keterangan khusus.
+- **Discard Changes** (kembalikan worktree ke HEAD) via menu klik-kanan pada file yang belum ter-stage.
+- **Branch** ditampilkan di panel (ikon ⎇) dan di **status bar** bersama hitungan `+N ~N ?N`.
+- **Pintasan**: `Ctrl+Shift+G` / ikon Git di title bar. Status di-refresh otomatis saat panel terbuka.
+- Berbasis **git CLI** (proses anak), tanpa pustaka eksternal — repositori yang bukan git menampilkan pesan ramah.
+
 ### 🔍 Find & Replace
 - Pencarian teks dengan hasil **live**.
 - Ganti satu per satu (`FindNext/Prev`) atau **ganti semua** (`ReplaceAll`).
@@ -141,6 +152,7 @@
 - ✅ **Bisa ganti font** untuk pengalaman coding yang nyaman.
 - ✅ **Open source penuh kontrol**, kode sederhana dan mudah dikembangkan.
 - ✅ **Self-contained**: tidak butuh ekstensi rumit untuk fitur inti.
+- ✅ **Git panel fungsional** berbasis git CLI: status, stage/unstage, commit, dan diff berwarna tanpa pustaka git berat.
 - ✅ **Deteksi error anti-palsu**: parser sadar bahasa (JS/TS/JSX/TSX template & regex, lifetime/raw-string Rust) — yang dilaporkan hanya error sungguhan, bukan teks biasa yang salah dibaca.
 
 ---

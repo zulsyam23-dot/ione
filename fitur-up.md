@@ -48,7 +48,7 @@
 | 18 | **Virtual rendering file besar** | LayoutJob dibangun utuh tiap frame → file besar melambat | `editor/mod.rs` |
 | 19 | **Normalisasi encoding/BOM & newline + perbaiki mojibake literal** | Placeholder spasi & marker fold tampil sebagai karakter aneh (`â\x90£`, `â‹¯`) | Byte `C3 A2 C2 90 C2 A3` (`SPACE_HOLDER`, `editor/mod.rs`), `C3 A2 E2 80 9B C2 AF` (`MARKER`, `editor/folds.rs`) |
 | 20 | **Minimap & breadcrumb** | Navigasi file besar & jejak posisi tak ada | — |
-| 21 | **Panel Git** (status, stage, commit, diff, blame) | Version control harus keluar aplikasi | — |
+| 21 | **Panel Git lanjutan** ✅ SEBAGIAN — status, stage/unstage (per-file & all), commit, diff berwarna, discard, open file, branch + hitungan di status bar sudah jalan (`src/git.rs`, kanan panel, Ctrl+Shift+G); yang belum: **blame**, **pull/push**, **branch switching**, **stash/log** | Version control harus keluar aplikasi | `git.rs` (git CLI) |
 | 22 | **Filter cepat di file-tree** | Mencari file dalam pohon besar lambat | `file_tree.rs` (tanpa kotak filter) |
 | 23 | **Shell non-PowerShell** (cmd/bash/WSL) | Pengguna non-PowerShell tak bisa | Hardcoded pwsh/powershell (`terminal.rs:132`) |
 | 24 | **Drag-drop file ke editor/terminal** | Buka file dengan drag belum didukung | — |
@@ -60,6 +60,7 @@
 - Perilaku Enter/indent & auto-close terverifikasi di kode (`editor/mod.rs`): Enter polos memicu auto-indent (hanya bila leading whitespace > 0), auto-close pasangan kurung/kutip tidak jalan di dalam string/komentar (mask lexer).
 - Item yang **sudah terwujud tetapi sempat tercatat sebagai kekurangan** di versi lama `FITUR.md`: **auto-complete ringan** kini tersedia (`completion.rs`, lih. `FITUR.md` → ✨ Auto-Complete) dan **undo/redo kursor tunggal** tersedia via egui bawaan.
 - Item roadmap lama `FITUR.md` telah dipetakan ke daftar ini: simpan pengaturan → B-17; git panel → C-21; recent files → B-14; minimap/breadcrumb → C-20; build/run → A-7; LSP/cargo check → A-3.
+- Git panel (C-21) tahap pertama rampung — verifikasi lewat `git.rs` (unit test parse porcelain, `cargo test` 67 test hijau) plus build.
 
 ---
 
