@@ -59,11 +59,11 @@
 - **Panel sisi kanan** dengan daftar perubahan di-group: **Staged Changes**, **Changes** (worktree), **Untracked** — masing-masing dengan penghitung.
 - **Status akurat** via `git status --porcelain -uall`: huruf status berwarna (A hijau, M kuning, D merah, U abu), path rusak/detached HEAD ditangani.
 - **Stage/Unstage** per-file (tombol `+`/`−` per baris, atau menu klik-kanan) dan **Stage All / Unstage All** (`git add -A` / `git reset` index-only).
-- **Commit** lewat kotak pesan multi-baris (Enter+Ctrl) — hanya index yang di-commit; tombol nonaktif jika belum ada perubahan ter-stage.
+- **Commit** lewat kotak pesan multi-baris (`Ctrl+Enter`) — hanya index yang di-commit; tombol nonaktif jika belum ada perubahan ter-stage.
 - **Diff per-file**: klik baris → tampil unified diff berwarna (+hijau/−merah/@@ biru) di bawah daftar; tombol **Open File** untuk membuka ke editor. File terhapus/untracked diberi keterangan khusus.
 - **Discard Changes** (kembalikan worktree ke HEAD) via menu klik-kanan pada file yang belum ter-stage.
 - **Branch** ditampilkan di panel (ikon ⎇) dan di **status bar** bersama hitungan `+N ~N ?N`.
-- **Pintasan**: `Ctrl+Shift+G` / ikon Git di title bar. Status di-refresh otomatis saat panel terbuka.
+- **Pintasan**: `Ctrl+Shift+G` / ikon Git di title bar. Di dalam panel: klik baris = lihat diff, tombol `+`/`−` = stage/unstage satu file, klik-kanan = Open File / Copy Path / Stage · Unstage / Discard Changes, `Ctrl+Enter` = commit. Status di-refresh otomatis saat panel terbuka.
 - Berbasis **git CLI** (proses anak), tanpa pustaka eksternal — repositori yang bukan git menampilkan pesan ramah.
 
 ### 🔍 Find & Replace

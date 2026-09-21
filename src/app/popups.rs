@@ -199,16 +199,19 @@ impl EditorApp {
                         ui.add_space(14.0);
                         ui.label(header_label(ui, "Shortcuts"));
                         ui.add_space(4.0);
-                        let shortcuts: [(&str, &str); 13] = [
+                        let shortcuts: [(&str, &str); 16] = [
                             ("New File", "Ctrl+N"),
                             ("Open File", "Ctrl+O"),
                             ("Open Folder", "Ctrl+K Ctrl+O"),
+                            ("Quick Open", "Ctrl+P"),
                             ("Save", "Ctrl+S"),
                             ("Save As", "Ctrl+Shift+S"),
                             ("Close Tab", "Ctrl+W"),
                             ("Find & Replace", "Ctrl+H"),
                             ("Toggle File Explorer", "Ctrl+L"),
+                            ("Toggle Source Control", "Ctrl+Shift+G"),
                             ("Toggle Terminal", "Ctrl+`"),
+                            ("Commit (Git Panel)", "Ctrl+Enter"),
                             ("Select Next Word", "Ctrl+D"),
                             ("Fold Block", "Ctrl+Shift+["),
                             ("Unfold Block", "Ctrl+Shift+]"),

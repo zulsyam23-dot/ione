@@ -119,6 +119,7 @@ cargo run
 | File Baru | `Ctrl+N` |
 | Buka File | `Ctrl+O` |
 | Buka Folder | `Ctrl+K Ctrl+O` |
+| Quick Open | `Ctrl+P` |
 | Simpan | `Ctrl+S` |
 | Simpan Sebagai | `Ctrl+Shift+S` |
 | Tutup Tab | `Ctrl+W` |
@@ -126,11 +127,14 @@ cargo run
 | Toggle File Explorer | `Ctrl+L` |
 | Toggle Source Control | `Ctrl+Shift+G` |
 | Toggle Terminal | `` Ctrl+` `` |
+| Commit (Git Panel) | `Ctrl+Enter` |
 | Pilih kejadian kata berikutnya | `Ctrl+D` |
 | Lipat / Buka blok | `Ctrl+Shift+[` / `Ctrl+Shift+]` |
 | Siklus Tab | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
 
 > **Terminal multi-session:** klik kiri = pindah sesi, klik tengah / klik kanan → Close = tutup sesi.
+
+> **Git Panel:** klik baris = lihat diff, tombol `+`/`−` = stage/unstage satu file, klik-kanan = Open File / Copy Path / Stage · Unstage / Discard Changes, `Ctrl+Enter` = commit pada kotak pesan.
 
 ---
 
