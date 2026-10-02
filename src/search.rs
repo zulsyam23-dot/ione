@@ -106,14 +106,14 @@ impl SearchPanel {
                 }
 
                 if icons
-                    .image_button(ui, Icon::ArrowLeft, 14.0, "Previous match")
+                    .image_button(ui, Icon::ArrowLeft, 16.0, "Previous match")
                     .clicked()
                 {
                     commands.push(AppCommand::FindPrev(self.query.clone()));
                     self.prev_match();
                 }
                 if icons
-                    .image_button(ui, Icon::ArrowRight, 14.0, "Next match")
+                    .image_button(ui, Icon::ArrowRight, 16.0, "Next match")
                     .clicked()
                 {
                     commands.push(AppCommand::FindNext(self.query.clone()));
@@ -129,7 +129,7 @@ impl SearchPanel {
                     self.show_replace = !self.show_replace;
                 }
 
-                if icons.image_button(ui, Icon::Close, 14.0, "Close").clicked() {
+                if icons.image_button(ui, Icon::Close, 16.0, "Close").clicked() {
                     self.visible = false;
                 }
             });

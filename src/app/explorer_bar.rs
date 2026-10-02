@@ -14,21 +14,21 @@ impl EditorApp {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if self
                     .icons
-                    .image_button(ui, Icon::Refresh, 14.0, "Refresh")
+                    .image_button(ui, Icon::Refresh, 16.0, "Refresh")
                     .clicked()
                 {
                     commands.push(AppCommand::RefreshFileTree);
                 }
                 if self
                     .icons
-                    .image_button(ui, Icon::FilePlus, 14.0, "New File")
+                    .image_button(ui, Icon::FilePlus, 16.0, "New File")
                     .clicked()
                 {
                     commands.push(AppCommand::NewFile);
                 }
                 if self
                     .icons
-                    .image_button(ui, Icon::FolderPlus, 14.0, "New Folder")
+                    .image_button(ui, Icon::FolderPlus, 16.0, "New Folder")
                     .clicked()
                 {
                     commands.push(AppCommand::NewFolder(None));

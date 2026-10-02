@@ -35,14 +35,19 @@ impl EditorApp {
                         ui.add_space(8.0);
                         if self
                             .icons
-                            .image_button(ui, Icon::Terminal, 14.0, "Toggle Terminal (Ctrl+`)")
+                            .image_button(ui, Icon::Terminal, 16.0, "Toggle Terminal (Ctrl+`)")
                             .clicked()
                         {
                             commands.push(AppCommand::ToggleTerminal);
                         }
                         if self
                             .icons
-                            .image_button(ui, Icon::Git, 14.0, "Toggle Source Control (Ctrl+Shift+G)")
+                            .image_button(
+                                ui,
+                                Icon::Git,
+                                16.0,
+                                "Toggle Source Control (Ctrl+Shift+G)",
+                            )
                             .clicked()
                         {
                             commands.push(AppCommand::ToggleGit);

@@ -402,19 +402,16 @@ pub(crate) fn draw_fold_icons(
         let rect =
             egui::Rect::from_min_size(egui::Pos2::new(icon_x, y), egui::vec2(ICON_PX, ICON_PX));
         // Closed fold -> chevron up (expand it), open foldable block -> chevron
-        // down (collapse it). Rasterized once and cached by the Icons cache.
+        // down (collapse it). `paint_at` rasterizes the SVG at exactly the size
+        // of `rect`, so the chevron stays crisp.
         let icon = if collapsed.contains(&row) {
             Icon::ChevronUp
         } else {
             Icon::ChevronDown
         };
-        let tex = icons.texture(ui.ctx(), icon);
-        ui.painter().image(
-            tex.id(),
-            rect,
-            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-            egui::Color32::from_gray(140),
-        );
+        egui::Image::new(icons.source(icon))
+            .tint(egui::Color32::from_gray(140))
+            .paint_at(ui, rect);
         let resp = ui.interact(
             rect,
             egui::Id::new(("fold_icon", row)),

@@ -198,7 +198,7 @@ impl FileTree {
                             });
                         } else {
                             // Keep the icon columns aligned with folder rows above.
-                            ui.add_space(14.0);
+                            ui.add_space(16.0);
                         }
                         ui.add_space(indent);
                         if entry.is_dir {
@@ -207,7 +207,7 @@ impl FileTree {
                             } else {
                                 Icon::ChevronRight
                             };
-                            icons.image_button(ui, chevron, 12.0, "");
+                            icons.image_button(ui, chevron, 16.0, "");
                         } else {
                             ui.add_space(16.0);
                         }
@@ -217,7 +217,7 @@ impl FileTree {
                         } else {
                             file_icon(&entry.name)
                         };
-                        icons.image_button(ui, file_icon, 14.0, "");
+                        icons.image_button(ui, file_icon, 16.0, "");
 
                         let color = if let Some(t) = tints.and_then(|m| m.get(&entry.path)) {
                             *t

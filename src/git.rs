@@ -472,11 +472,11 @@ impl GitPanel {
             ui.label(header_label(ui, "Source Control"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(6.0);
-                if icons.image_button(ui, Icon::Close, 14.0, "Close").clicked() {
+                if icons.image_button(ui, Icon::Close, 16.0, "Close").clicked() {
                     self.visible = false;
                 }
                 if icons
-                    .image_button(ui, Icon::Refresh, 14.0, "Refresh status")
+                    .image_button(ui, Icon::Refresh, 16.0, "Refresh status")
                     .clicked()
                 {
                     self.spawn_scan(root.map(|p| p.as_path()), true);

@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
-use eframe::egui::{self, Color32, Vec2};
+use eframe::egui::{self, Color32, Vec2, load::Bytes};
 
 #[allow(dead_code)]
 pub enum Icon {
@@ -135,10 +135,12 @@ impl Icon {
     }
 }
 
-/// Caches rasterized SVG icons on demand. Clears when the icon color changes.
+/// Caches the tinted SVG of each icon. The cache is dropped when the icon color
+/// changes; the previous entries then linger in egui's loader cache, bounded by
+/// the number of palettes the user cycles through.
 pub struct Icons {
     color: Color32,
-    cache: HashMap<&'static str, egui::TextureHandle>,
+    cache: HashMap<&'static str, egui::ImageSource<'static>>,
 }
 
 impl Icons {
@@ -149,7 +151,7 @@ impl Icons {
         }
     }
 
-    /// Switch the icon color (e.g. on theme change) and drop cached textures.
+    /// Switch the icon color (e.g. on theme change) and drop cached sources.
     pub fn set_color(&mut self, color: Color32) {
         if color != self.color {
             self.color = color;
@@ -157,28 +159,29 @@ impl Icons {
         }
     }
 
-    fn rasterize(&self, icon: Icon) -> egui::ColorImage {
-        let svg = icon.svg().replace("currentColor", &hex(self.color));
-        let options = resvg::usvg::Options::default();
-        let hint = egui::load::SizeHint::Size {
-            width: 128,
-            height: 128,
-            maintain_aspect_ratio: true,
-        };
-        egui_extras::image::load_svg_bytes_with_size(svg.as_bytes(), hint, &options)
-            .unwrap_or_else(|_| egui::ColorImage::filled([128, 128], self.color))
-    }
-
-    /// Return the texture for an icon, rasterized at natural size (24px).
-    pub fn texture(&mut self, ctx: &egui::Context, icon: Icon) -> egui::TextureHandle {
+    /// The icon as an image source with `currentColor` resolved to the palette
+    /// color.
+    ///
+    /// The bytes are handed to egui instead of being rasterized here on purpose:
+    /// egui renders an SVG at exactly the pixel size it is painted at and caches
+    /// one texture per (uri, size), so a downscaled texture never has to be
+    /// minified by the GPU. Rasterizing at a fixed larger size instead leaves
+    /// thin strokes subject to bilinear minification without mipmaps, which
+    /// breaks diagonal lines into dashes.
+    pub fn source(&mut self, icon: Icon) -> egui::ImageSource<'static> {
         let name = icon.name();
-        if let Some(tex) = self.cache.get(name) {
-            return tex.clone();
+        if let Some(src) = self.cache.get(name) {
+            return src.clone();
         }
-        let image = self.rasterize(icon);
-        let tex = ctx.load_texture(format!("icon_{name}"), image, egui::TextureOptions::LINEAR);
-        self.cache.insert(name, tex.clone());
-        tex
+        let svg = icon.svg().replace("currentColor", &hex(self.color));
+        let src = egui::ImageSource::Bytes {
+            // The `.svg` suffix is required: both egui and egui_extras only feed
+            // SVGs to their loaders, and only those are cached per size.
+            uri: Cow::Owned(format!("bytes://ione/{name}-{}.svg", hex(self.color))),
+            bytes: Bytes::from(svg.into_bytes()),
+        };
+        self.cache.insert(name, src.clone());
+        src
     }
 
     /// Render an icon as a clickable button with a hover tooltip.
@@ -189,10 +192,9 @@ impl Icons {
         size: f32,
         tooltip: &str,
     ) -> egui::Response {
-        let tex = self.texture(ui.ctx(), icon);
-        let st = egui::load::SizedTexture::new(tex.id(), tex.size_vec2());
+        let src = self.source(icon);
         ui.add(
-            egui::Image::new(egui::ImageSource::Texture(st))
+            egui::Image::new(src)
                 .fit_to_exact_size(Vec2::splat(size))
                 .sense(egui::Sense::click()),
         )
@@ -202,4 +204,79 @@ impl Icons {
 
 fn hex(color: Color32) -> String {
     format!("#{:02x}{:02x}{:02x}", color.r(), color.g(), color.b())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::load::{ImagePoll, SizeHint, TexturePoll};
+
+    /// Icons must reach egui as SVG bytes, so that egui rasterizes them per
+    /// painted size, and that raster must come out 1:1 with the painted pixels.
+    ///
+    /// Rasterizing once at a larger size and letting the GPU minify the texture
+    /// (bilinear, no mipmaps) is what tore thin strokes into dashes.
+    #[test]
+    fn icons_rasterize_at_the_painted_pixel_size() {
+        for ppp in [1.0_f32, 1.5, 2.0] {
+            for size in [12.0_f32, 16.0] {
+                let ctx = egui::Context::default();
+                ctx.set_fonts(egui::FontDefinitions::empty());
+                ctx.set_pixels_per_point(ppp);
+                egui_extras::install_image_loaders(&ctx);
+
+                let mut icons = Icons::new();
+                icons.set_color(Color32::WHITE);
+                let src = icons.source(Icon::Git);
+                let uri = match &src {
+                    egui::ImageSource::Bytes { uri, .. } => uri.to_string(),
+                    other => panic!("icons must load from SVG bytes, got {other:?}"),
+                };
+                // Both loaders reject anything else, and only SVGs get a
+                // texture per size.
+                assert!(uri.ends_with(".svg"), "uri must be an svg: {uri}");
+
+                let want = (size * ppp).round() as u32;
+                let hint = SizeHint::Size {
+                    width: want,
+                    height: want,
+                    maintain_aspect_ratio: true,
+                };
+                // Registers the bytes with egui, then inspect what it rasterized.
+                assert!(
+                    matches!(
+                        src.load(&ctx, egui::TextureOptions::LINEAR, hint),
+                        Ok(TexturePoll::Ready { .. })
+                    ),
+                    "icon failed to load (ppp={ppp}, size={size})"
+                );
+                match ctx.try_load_image(&uri, hint) {
+                    Ok(ImagePoll::Ready { image }) => assert_eq!(
+                        image.size,
+                        [want as usize, want as usize],
+                        "raster must match the painted pixels (ppp={ppp}, size={size})"
+                    ),
+                    _ => panic!("icon image should be ready (ppp={ppp}, size={size})"),
+                }
+            }
+        }
+    }
+
+    /// The palette color is baked into the SVG, so it also has to be part of the
+    /// cache key or the wrong color keeps being painted.
+    #[test]
+    fn color_change_produces_a_new_source() {
+        let mut icons = Icons::new();
+        icons.set_color(Color32::WHITE);
+        let white = icons.source(Icon::Git);
+        icons.set_color(Color32::from_gray(64));
+        let gray = icons.source(Icon::Git);
+
+        let uri = |src: &egui::ImageSource<'static>| match src {
+            egui::ImageSource::Bytes { uri, .. } => uri.to_string(),
+            other => panic!("expected SVG bytes, got {other:?}"),
+        };
+        assert_ne!(uri(&white), uri(&gray));
+        assert!(!uri(&gray).contains("#ffffff"), "{}", uri(&gray));
+    }
 }
