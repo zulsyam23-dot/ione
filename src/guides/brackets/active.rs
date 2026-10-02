@@ -2,8 +2,10 @@
 //! hover-activation so moving the mouse over a guide lights it up without a
 //! click.
 
+#[cfg(test)]
 use eframe::egui::{self, Pos2};
 
+#[cfg(test)]
 use crate::guides::geometry::{char_line, char_rect, pair_guide_x};
 
 use super::{BracketScan, Pair};
@@ -11,6 +13,7 @@ use super::{BracketScan, Pair};
 /// The innermost pair whose guide column the pointer is touching. Only pairs
 /// with a drawn guide (multi-line) count; pairs are sorted by `open`, so a
 /// later match is more deeply nested and simply overwrites — innermost wins.
+#[cfg(test)]
 pub(crate) fn hovered_pair(
     pointer: Pos2,
     galley: &egui::Galley,

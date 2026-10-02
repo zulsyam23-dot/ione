@@ -19,6 +19,7 @@ pub(crate) fn numlines_show(
     ui: &mut Ui,
     icons: &mut Icons,
     view: &FoldView,
+    counter: &mut String,
     fold_rows: &[usize],
     id: &str,
     theme: &ColorTheme,
@@ -30,19 +31,6 @@ pub(crate) fn numlines_show(
     // Half-width columns left of the numbers, reserved for the fold icons.
     let strip = 3usize;
     let pad = 4usize + strip;
-    let mut lines = Vec::with_capacity(rows);
-    for (_, row) in view.rows.iter().enumerate() {
-        let label = (row.line + 1).to_string();
-        lines.push(format!(
-            "{}{label}",
-            " ".repeat(pad + max_indent.saturating_sub(label.len()))
-        ));
-    }
-    while lines.len() < TEXT_ROWS {
-        lines.push(" ".repeat(pad + max_indent));
-    }
-    let mut counter = lines.join("\n");
-
     let width = (max_indent + pad) as f32 * FONT_SIZE * 0.5;
 
     let mut layouter = |ui: &Ui, text_buffer: &dyn TextBuffer, _wrap_width: f32| {
@@ -53,7 +41,7 @@ pub(crate) fn numlines_show(
         ui.fonts_mut(|fonts| fonts.layout_job(layout_job))
     };
 
-    let output = egui::TextEdit::multiline(&mut counter)
+    let output = egui::TextEdit::multiline(counter)
         .id_source(format!("{id}_numlines"))
         .font(egui::TextStyle::Monospace)
         .interactive(false)
@@ -64,16 +52,27 @@ pub(crate) fn numlines_show(
         .show(ui);
 
     let mut clicked = Vec::new();
+    let clip = ui.clip_rect();
+    let first_visible = output
+        .galley
+        .rows
+        .partition_point(|row| output.galley_pos.y + row.pos.y + row.size.y < clip.top());
+    let last_visible = output
+        .galley
+        .rows
+        .partition_point(|row| output.galley_pos.y + row.pos.y <= clip.bottom());
+    let first_fold = fold_rows.partition_point(|&row| row < first_visible);
+    let last_fold = fold_rows.partition_point(|&row| row < last_visible);
     let mut collapsed = std::collections::HashSet::new();
-    for (i, r) in view.rows.iter().enumerate() {
-        if r.marker.is_some() {
-            collapsed.insert(i);
+    for index in first_visible..last_visible.min(view.rows.len()) {
+        if view.rows[index].marker.is_some() {
+            collapsed.insert(index);
         }
     }
     draw_fold_icons(
         ui,
         icons,
-        fold_rows,
+        &fold_rows[first_fold..last_fold],
         &collapsed,
         &output.galley,
         output.galley_pos,
@@ -86,7 +85,9 @@ pub(crate) fn numlines_show(
     if !diag_rows.is_empty() {
         let marker_w = 3.0_f32;
         let marker_h = 12.0_f32;
-        for &(row, sev) in diag_rows {
+        let first_diag = diag_rows.partition_point(|&(row, _)| row < first_visible);
+        let last_diag = diag_rows.partition_point(|&(row, _)| row < last_visible);
+        for &(row, sev) in &diag_rows[first_diag..last_diag] {
             let Some(grow) = output.galley.rows.get(row) else {
                 continue;
             };
@@ -103,4 +104,22 @@ pub(crate) fn numlines_show(
     }
 
     clicked
+}
+
+pub(crate) fn build_counter(view: &FoldView) -> String {
+    let rows = view.rows.len().max(TEXT_ROWS);
+    let max_indent = rows.to_string().len();
+    let pad = 7usize;
+    let mut lines = Vec::with_capacity(rows);
+    for row in &view.rows {
+        let label = (row.line + 1).to_string();
+        lines.push(format!(
+            "{}{label}",
+            " ".repeat(pad + max_indent.saturating_sub(label.len()))
+        ));
+    }
+    while lines.len() < TEXT_ROWS {
+        lines.push(" ".repeat(pad + max_indent));
+    }
+    lines.join("\n")
 }

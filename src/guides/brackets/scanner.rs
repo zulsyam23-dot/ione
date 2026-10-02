@@ -15,6 +15,7 @@ pub(crate) fn analyze_brackets(chars: &[char], mask: &[bool]) -> BracketScan {
     let mut stack: Vec<(usize, usize)> = Vec::new(); // (open idx, kind)
     let mut pairs: Vec<Pair> = Vec::new();
     let mut brace_pairs: Vec<BracePair> = Vec::new();
+    let mut closing_brackets: Vec<(usize, char)> = Vec::new();
     let mut unmatched_closes: Vec<usize> = Vec::new();
     for (ci, &ch) in chars.iter().enumerate() {
         if mask.get(ci).copied().unwrap_or(false) {
@@ -24,6 +25,7 @@ pub(crate) fn analyze_brackets(chars: &[char], mask: &[bool]) -> BracketScan {
             depths[ci] = stack.len() as u8;
             stack.push((ci, kind));
         } else if let Some(kind) = CLOSE.iter().position(|&c| c == ch) {
+            closing_brackets.push((ci, ch));
             if stack.last().is_some_and(|&(_, top)| top == kind) {
                 let (oi, top_kind) = stack.pop().unwrap();
                 depths[ci] = stack.len() as u8;
@@ -61,6 +63,7 @@ pub(crate) fn analyze_brackets(chars: &[char], mask: &[bool]) -> BracketScan {
         depths,
         pairs,
         brace_pairs,
+        closing_brackets,
         unmatched_closes,
     }
 }

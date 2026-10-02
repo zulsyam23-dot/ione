@@ -12,7 +12,6 @@ use crate::guides::Pair;
 /// always `< display_char_count`, so the clamp was pure waste; only `multi`
 /// passes `de + 1` == end (valid for `pos_from_cursor`).
 pub(crate) fn char_rect(galley: &egui::Galley, origin: Pos2, idx: usize) -> Rect {
-    debug_assert!(idx <= galley.chars().count());
     let r = galley.pos_from_cursor(CCursor {
         index: CharIndex(idx),
         prefer_next_row: false,
@@ -21,7 +20,6 @@ pub(crate) fn char_rect(galley: &egui::Galley, origin: Pos2, idx: usize) -> Rect
 }
 
 pub(crate) fn char_line(galley: &egui::Galley, idx: usize) -> usize {
-    debug_assert!(idx <= galley.chars().count());
     galley
         .layout_from_cursor(CCursor {
             index: CharIndex(idx),
@@ -37,33 +35,6 @@ pub(crate) fn pair_guide_x(galley: &egui::Galley, origin: Pos2, p: Pair) -> Opti
         return None;
     }
     Some(char_rect(galley, origin, p.close).left().round())
-}
-
-pub(crate) fn draw_pair_guide(
-    painter: &egui::Painter,
-    galley: &egui::Galley,
-    origin: Pos2,
-    p: Pair,
-    width: f32,
-    color: Color32,
-) {
-    // ponytail: O(pairs×rows) lookup per frame via pos_from_cursor. Cache a
-    // char→row map keyed by content hash if large files ever lag.
-    let Some(x) = pair_guide_x(galley, origin, p) else {
-        return;
-    };
-    let open_r = char_rect(galley, origin, p.open);
-    let close_r = char_rect(galley, origin, p.close);
-    // Align the guide with the closing bracket's column, not the opening one:
-    // `fn foo() {` opens at the end of the line, `}` at the indent column.
-    // Start right below the opening bracket's row and end right above the
-    // closing one, so the guide covers only the lines strictly between them.
-    let y0 = open_r.bottom().round();
-    let y1 = close_r.top().round();
-    if y1 <= y0 {
-        return;
-    }
-    guide_line(painter, x, y0, y1, width, color);
 }
 
 /// A square-cap vertical guide: a thin rect reads as a crisp uniform stroke

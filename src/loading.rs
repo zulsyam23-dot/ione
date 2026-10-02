@@ -23,12 +23,6 @@ impl LoadingOverlay {
         })
     }
 
-    /// Editor-area splash for when a heavy file (hundreds/thousands of lines)
-    /// is being opened.
-    pub fn new_loading_file() -> Option<Self> {
-        Self::from_raw(loading_file_frames()?)
-    }
-
     fn from_raw(raw: &'static [(egui::ColorImage, Duration)]) -> Option<Self> {
         if raw.is_empty() {
             return None;
@@ -71,7 +65,7 @@ impl LoadingOverlay {
         }
 
         // Advance through frames by accumulated delays (loop when past the end).
-        // ponytail: playback slow-down factor, since loading-file.gif frame delays are tiny.
+        // GIF frame delays can be very short, so slow playback slightly.
         let slow = 2.5f64;
         let total: f64 = self
             .frames
@@ -136,13 +130,6 @@ fn loding_frames() -> Option<&'static [(egui::ColorImage, Duration)]> {
     static FRAMES: OnceLock<Option<Vec<(egui::ColorImage, Duration)>>> = OnceLock::new();
     FRAMES
         .get_or_init(|| decode_frames(include_bytes!("..\\assets\\icons\\app\\loding.gif")))
-        .as_deref()
-}
-
-fn loading_file_frames() -> Option<&'static [(egui::ColorImage, Duration)]> {
-    static FRAMES: OnceLock<Option<Vec<(egui::ColorImage, Duration)>>> = OnceLock::new();
-    FRAMES
-        .get_or_init(|| decode_frames(include_bytes!("..\\assets\\icons\\app\\loading-file.gif")))
         .as_deref()
 }
 

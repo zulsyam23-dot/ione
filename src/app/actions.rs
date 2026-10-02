@@ -3,7 +3,6 @@ use std::time::Instant;
 
 use eframe::egui;
 
-use crate::loading::LoadingOverlay;
 use crate::tabs::TabManager;
 
 use super::EditorApp;
@@ -412,22 +411,7 @@ impl EditorApp {
     }
 
     pub(super) fn open_path(&mut self, path: PathBuf) {
-        // Splash for heavy opens: set before the read when the file is big
-        // enough to stall on disk, and after the read when it spans many
-        // lines (keeps the pre-existing `>= 500 lines` behavior).
-        let splash = |s: &mut Self| {
-            if let Some(ov) = LoadingOverlay::new_loading_file() {
-                s.loading = Some((ov, Instant::now()));
-            }
-        };
-        let heavy_bytes = std::fs::metadata(&path).is_ok_and(|m| m.len() >= 50_000);
-        if heavy_bytes {
-            splash(self);
-        }
         if let Ok(content) = std::fs::read_to_string(&path) {
-            if !heavy_bytes && content.lines().count() >= 500 {
-                splash(self);
-            }
             let syntax = TabManager::detect_syntax(&path);
             self.tabs.open_file(path.clone(), content, syntax);
             crate::settings::push_recent(&mut self.recent_files, path);

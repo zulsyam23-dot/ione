@@ -56,6 +56,12 @@ pub struct TabCache {
     /// with auto-close and bracket logic without re-lexing.
     pub mask: Vec<bool>,
     pub fold_opens: Vec<usize>,
+    pub fold_rows_key: Option<(u64, u64)>,
+    pub fold_rows: Vec<usize>,
+    pub diag_rows_key: Option<(u64, u64)>,
+    pub diag_rows: Vec<(usize, crate::diagnostics::Severity)>,
+    pub filtered_pairs_galley: Option<std::sync::Arc<eframe::egui::Galley>>,
+    pub filtered_pairs: Vec<crate::guides::Pair>,
     /// Fold view keyed on `(content hash, fold fingerprint, view)`.
     pub fold_view_cache: Option<(u64, u64, crate::editor::folds::FoldView)>,
     /// Style key covering theme/overlay/palette/syntax for the mask+links.
@@ -73,6 +79,9 @@ pub struct TabCache {
         Links,
         crate::editor::styling::Styled,
     )>,
+    /// Gutter text reused across frames and rebuilt only when content/folds change.
+    pub gutter_key: Option<(u64, u64)>,
+    pub gutter_text: String,
 }
 
 impl Default for TabCache {
@@ -83,9 +92,17 @@ impl Default for TabCache {
             scan: BracketScan::default(),
             mask: Vec::new(),
             fold_opens: Vec::new(),
+            fold_rows_key: None,
+            fold_rows: Vec::new(),
+            diag_rows_key: None,
+            diag_rows: Vec::new(),
+            filtered_pairs_galley: None,
+            filtered_pairs: Vec::new(),
             fold_view_cache: None,
             style_key: 0,
             job_cache: None,
+            gutter_key: None,
+            gutter_text: String::new(),
         }
     }
 }
@@ -173,9 +190,17 @@ impl Tab {
             scan,
             mask,
             fold_opens,
+            fold_rows_key: None,
+            fold_rows: Vec::new(),
+            diag_rows_key: None,
+            diag_rows: Vec::new(),
+            filtered_pairs_galley: None,
+            filtered_pairs: Vec::new(),
             fold_view_cache: None,
             style_key,
             job_cache: None,
+            gutter_key: None,
+            gutter_text: String::new(),
         };
         self.diag_hash = hash;
         hash

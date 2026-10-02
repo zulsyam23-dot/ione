@@ -62,6 +62,8 @@ pub(crate) struct FoldView {
     pub(crate) rows: Vec<Row>,
     /// real line number -> display row (usize::MAX when hidden).
     pub(crate) real_row: Vec<usize>,
+    /// Real source char index of each line start, cached with the view.
+    pub(crate) real_line_starts: Vec<usize>,
 }
 
 /// The display chars of one inline `â‹¯` marker (appended to its opening line).
@@ -175,6 +177,7 @@ pub(crate) fn build_fold_view(content: &str, folds: &[Fold]) -> FoldView {
         d2r,
         rows,
         real_row,
+        real_line_starts: line_starts,
     }
 }
 
@@ -223,16 +226,12 @@ pub(crate) fn unfold_covering(folds: &mut Vec<Fold>, content: &str, real_line: u
 
 /// Display rows that carry a fold toggle: the opening line of every closed
 /// fold plus every visible line where a multi-line brace block starts.
-pub(crate) fn fold_rows(
-    view: &FoldView,
-    folds: &[Fold],
-    brace_opens: &[usize],
-    content: &str,
-) -> Vec<usize> {
-    // ponytail: was `line_starts_of(content)` per item → O(folds×content) per
-    // frame. Hoisted: one scan, O(log n) lookups.
-    let starts = line_starts_of(content);
-    let line_of_char = |ci: usize| starts.partition_point(|&s| s <= ci).saturating_sub(1);
+pub(crate) fn fold_rows(view: &FoldView, folds: &[Fold], brace_opens: &[usize]) -> Vec<usize> {
+    let line_of_char = |ci: usize| {
+        view.real_line_starts
+            .partition_point(|&s| s <= ci)
+            .saturating_sub(1)
+    };
     let mut set = std::collections::BTreeSet::new();
     for f in folds {
         if let Some(r) = view.display_row_of(line_of_char(f.open)) {
@@ -254,7 +253,8 @@ pub(crate) fn fold_rows(
 pub(crate) struct FoldBuffer<'a> {
     content: &'a mut String,
     folds: &'a mut Vec<Fold>,
-    view: FoldView,
+    view: &'a FoldView,
+    updated_view: Option<FoldView>,
 }
 
 impl<'a> FoldBuffer<'a> {
@@ -264,34 +264,44 @@ impl<'a> FoldBuffer<'a> {
     pub(crate) fn with_view(
         content: &'a mut String,
         folds: &'a mut Vec<Fold>,
-        view: FoldView,
+        view: &'a FoldView,
     ) -> Self {
         Self {
             content,
             folds,
             view,
+            updated_view: None,
         }
     }
 
     pub(crate) fn view(&self) -> &FoldView {
-        &self.view
+        self.updated_view.as_ref().unwrap_or(self.view)
+    }
+
+    pub(crate) fn content(&self) -> &str {
+        self.content
+    }
+
+    pub(crate) fn take_updated_view(&mut self) -> Option<FoldView> {
+        self.updated_view.take()
     }
 
     fn rebuild(&mut self) {
-        self.view = build_fold_view(self.content, self.folds);
+        self.updated_view = Some(build_fold_view(self.content, self.folds));
     }
 
     /// Display char index -> real char index, clamped to the real end.
     fn to_real(&self, di: usize) -> usize {
-        let n = self.view.display.chars().count();
-        self.view.d2r[di.min(n)]
+        let view = self.view();
+        let n = view.display.chars().count();
+        view.d2r[di.min(n)]
     }
 
     /// Open-brace indices of every fold whose inline `â‹¯` marker intersects (or
     /// is touched by) `[s,e)` — typing right at the marker's spot unfolds.
     fn markers_in(&self, s: usize, e: usize) -> Vec<usize> {
         let mut out = Vec::new();
-        for r in &self.view.rows {
+        for r in &self.view().rows {
             let (Some(open), Some(mc)) = (r.marker, r.marker_char) else {
                 continue;
             };
@@ -329,7 +339,7 @@ impl TextBuffer for FoldBuffer<'_> {
     }
 
     fn as_str(&self) -> &str {
-        &self.view.display
+        &self.view().display
     }
 
     fn insert_text(&mut self, text: &str, char_index: CharIndex) -> usize {
@@ -500,22 +510,24 @@ pub(crate) fn suppress_folded_pairs(
     scan: &crate::guides::BracketScan,
     real_scan: &crate::guides::BracketScan,
     view: &FoldView,
-) -> crate::guides::BracketScan {
+) -> Vec<crate::guides::Pair> {
     let matched: std::collections::HashSet<usize> = real_scan
         .pairs
         .iter()
         .filter(|p| p.close != usize::MAX)
         .map(|p| p.open)
         .collect();
-    let mut filtered = scan.clone();
-    filtered.pairs.retain(|p| {
-        if p.close != usize::MAX {
-            return true;
-        }
-        let real_open = view.d2r.get(p.open).copied().unwrap_or(usize::MAX);
-        !matched.contains(&real_open)
-    });
-    filtered
+    scan.pairs
+        .iter()
+        .copied()
+        .filter(|pair| {
+            if pair.close != usize::MAX {
+                return true;
+            }
+            let real_open = view.d2r.get(pair.open).copied().unwrap_or(usize::MAX);
+            !matched.contains(&real_open)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -604,7 +616,7 @@ mod tests {
             close: 35,
         }];
         let view = build_fold_view(&content, &folds);
-        let mut fb = FoldBuffer::with_view(&mut content, &mut folds, view);
+        let mut fb = FoldBuffer::with_view(&mut content, &mut folds, &view);
         assert_eq!(fb.insert_text("!", egui::text::CharIndex(28)), 1);
         assert!(folds.is_empty());
         assert!(content.contains("fn b() {!"));
@@ -617,7 +629,7 @@ mod tests {
             close: 35,
         }];
         let view = build_fold_view(&content, &folds);
-        let mut fb = FoldBuffer::with_view(&mut content, &mut folds, view);
+        let mut fb = FoldBuffer::with_view(&mut content, &mut folds, &view);
         fb.delete_char_range(egui::text::CharIndex(28)..egui::text::CharIndex(29));
         assert!(folds.is_empty());
         assert_eq!(content, "fn a() {\n    x();\n}\nfn b() {    y();\n}\n");

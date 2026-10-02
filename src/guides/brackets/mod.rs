@@ -8,7 +8,6 @@
 pub(crate) mod active;
 pub(crate) mod scanner;
 
-pub(crate) use active::hovered_pair;
 pub(crate) use scanner::analyze_brackets;
 
 /// An opening–closing bracket pair. Unmatched opens are returned with
@@ -35,6 +34,8 @@ pub(crate) struct BracketScan {
     pub(crate) depths: Vec<u8>,
     pub(crate) pairs: Vec<Pair>,
     pub(crate) brace_pairs: Vec<BracePair>,
+    /// Closing bracket character indices in source order.
+    pub(crate) closing_brackets: Vec<(usize, char)>,
     /// Char indices of closing brackets that matched no open bracket.
     pub(crate) unmatched_closes: Vec<usize>,
 }

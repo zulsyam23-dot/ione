@@ -333,9 +333,19 @@ impl eframe::App for EditorApp {
 
         // Keep the explorer tint / status-bar git snippet current even while the
         // Source Control panel is closed (throttled inside GitPanel to ~900ms).
+        // Scans run off the UI thread; `poll` applies whatever finished since
+        // the last frame and repaints when anything changed.
         if self.show_sidebar || self.git.visible {
+            let busy = self.git.busy();
             self.git
                 .refresh(self.file_tree.root.as_deref(), Instant::now(), false);
+            if self.git.poll() {
+                ctx.request_repaint();
+            }
+            // A scan/diff is in flight: poll more often so results land promptly.
+            if busy {
+                ctx.request_repaint_after(Duration::from_millis(120));
+            }
         }
 
         self.show_title_bar(root_ui, &mut commands);

@@ -24,7 +24,7 @@ use egui::widgets::text_edit::TextEditOutput;
 use egui_code_editor::highlighting::Links;
 
 use crate::completion::{self, CompletionState};
-use crate::guides::{EditorOverlay, draw_editor_overlays};
+use crate::guides::EditorOverlay;
 use crate::icons::Icons;
 use crate::style::Palette;
 use crate::tabs::Tab;
@@ -134,45 +134,71 @@ pub fn show_editor(
         tab.cache.fold_view_cache = Some((content_hash0, fold_fp, v.clone()));
         v
     };
-    let fold_rows = folds::fold_rows(&view0, &tab.folds, &tab.cache.fold_opens, &tab.content);
+    if tab.cache.gutter_key != Some((content_hash0, fold_fp)) {
+        tab.cache.gutter_text = gutter::build_counter(&view0);
+        tab.cache.gutter_key = Some((content_hash0, fold_fp));
+    }
+    if tab.cache.fold_rows_key != Some((content_hash0, fold_fp)) {
+        tab.cache.fold_rows = folds::fold_rows(&view0, &tab.folds, &tab.cache.fold_opens);
+        tab.cache.fold_rows_key = Some((content_hash0, fold_fp));
+    }
+    let fold_rows = &tab.cache.fold_rows;
     let pending_goto = pending_goto.and_then(|line| view0.char_of_real_line(line));
 
-    // Gutter markers: display rows with a diagnostic, error winning the color.
-    let mut diag_rows: Vec<(usize, crate::diagnostics::Severity)> = Vec::new();
-    if !tab.cache.diagnostics.is_empty() {
-        // ponytail: was line_of_char(d.start) per diag → O(diags×content) per
-        // frame. One scan, O(log n) lookups.
-        let starts = folds::line_starts_of(&tab.content);
-        let line_of_char = |ci: usize| starts.partition_point(|&s| s <= ci).saturating_sub(1);
-        let mut rows: Vec<(usize, crate::diagnostics::Severity)> = Vec::new();
+    if tab.cache.diag_rows_key != Some((content_hash0, fold_fp)) {
+        let mut diag_rows = Vec::new();
+        let line_of_char = |ci: usize| {
+            view0
+                .real_line_starts
+                .partition_point(|&s| s <= ci)
+                .saturating_sub(1)
+        };
         for d in &tab.cache.diagnostics {
             let real_line = line_of_char(d.start);
             if let Some(row) = view0.display_row_of(real_line) {
-                rows.push((row, d.severity));
+                diag_rows.push((row, d.severity));
             }
         }
-        rows.sort_by_key(|&(r, s)| (r, s == crate::diagnostics::Severity::Warning));
-        rows.dedup_by_key(|&mut (r, _)| r);
-        diag_rows = rows;
+        diag_rows.sort_by_key(|&(row, severity)| {
+            (row, severity == crate::diagnostics::Severity::Warning)
+        });
+        diag_rows.dedup_by_key(|&mut (row, _)| row);
+        tab.cache.diag_rows = diag_rows;
+        tab.cache.diag_rows_key = Some((content_hash0, fold_fp));
     }
+    let diag_rows = &tab.cache.diag_rows;
 
     let text_edit_output = RefCell::new(None::<TextEditOutput>);
     // (links, styled) from the latest layouter run, which is the exact galley.
     let styled = RefCell::new(None::<(Links, styling::Styled)>);
-    let fold_view = RefCell::new(None::<FoldView>);
+    let updated_fold_view = RefCell::new(None::<FoldView>);
     // Folds are final for this frame now (toggle/unfold already ran): when
     // empty, the fold buffer equals the real content, so the galley hash can
     // reuse `content_hash0` instead of re-scanning. Hoisted out of the
     // layouter closure to keep the borrows disjoint.
     let folds_empty = tab.folds.is_empty();
+    let has_folds = !folds_empty;
+    if !has_folds {
+        tab.cache.filtered_pairs_galley = None;
+        tab.cache.filtered_pairs.clear();
+    }
 
     let code_editor = |ui: &mut Ui| {
         let frame = egui::Frame::new().fill(color_theme.bg());
         frame.show(ui, |ui| {
             ui.horizontal_top(|h| {
                 color_theme.modify_style(h, FONT_SIZE);
-                let clicked =
-                    gutter::numlines_show(h, icons, &view0, &fold_rows, &editor_id, &color_theme, &diag_rows, palette);
+                let clicked = gutter::numlines_show(
+                    h,
+                    icons,
+                    &view0,
+                    &mut tab.cache.gutter_text,
+                    fold_rows,
+                    &editor_id,
+                    &color_theme,
+                    diag_rows,
+                    palette,
+                );
                 for row in clicked {
                     let real_line = view0.rows[row].line;
                     folds::toggle_fold(&mut tab.folds, &tab.cache.fold_opens, &tab.content, real_line);
@@ -246,7 +272,7 @@ pub fn show_editor(
                         let mut fold_buffer = folds::FoldBuffer::with_view(
                             &mut tab.content,
                             &mut tab.folds,
-                            view0,
+                            &view0,
                         );
                         let text_edit = egui::TextEdit::multiline(&mut fold_buffer)
                             .id_source(&editor_id)
@@ -270,18 +296,38 @@ pub fn show_editor(
                             }
                         };
 
-                        let buffer_view = fold_buffer.view().clone();
+                        let buffer_view = fold_buffer.view();
                         if let Some((links_, s)) = styled.borrow().as_ref() {
                             links::handle_links(&output, links_);
-                            let scan =
-                                folds::suppress_folded_pairs(&s.scan, &tab.cache.scan, &buffer_view);
-                            draw_editor_overlays(
+                            let pairs = if !has_folds {
+                                &s.scan.pairs
+                            } else {
+                                let cache_matches = tab
+                                .cache
+                                .filtered_pairs_galley
+                                .as_ref()
+                                .is_some_and(|cached| {
+                                    std::sync::Arc::ptr_eq(cached, &output.galley)
+                                });
+                                if !cache_matches {
+                                tab.cache.filtered_pairs = folds::suppress_folded_pairs(
+                                    &s.scan,
+                                    &tab.cache.scan,
+                                    buffer_view,
+                                );
+                                tab.cache.filtered_pairs_galley =
+                                    Some(output.galley.clone());
+                                }
+                                &tab.cache.filtered_pairs
+                            };
+                            crate::guides::draw_editor_overlays_with_pairs(
                                 ui,
                                 &editor_id,
                                 &output.galley,
                                 output.galley_pos,
                                 output.cursor_range,
-                                &scan,
+                                &s.scan,
+                                pairs,
                                 overlay,
                                 palette,
                                 FONT_SIZE,
@@ -344,7 +390,10 @@ pub fn show_editor(
                                         {
                                             let syms = &tab.cache.symbols;
                                             let items = completion::build_items(
-                                                &tab.content, &syntax, syms, &prefix,
+                                                fold_buffer.content(),
+                                                &syntax,
+                                                syms,
+                                                &prefix,
                                             );
                                             if !items.is_empty() {
                                                 let selected = items
@@ -369,7 +418,10 @@ pub fn show_editor(
                                         } else if st.prefix != prefix {
                                             let syms = &tab.cache.symbols;
                                             let items = completion::build_items(
-                                                &tab.content, &syntax, syms, &prefix,
+                                                fold_buffer.content(),
+                                                &syntax,
+                                                syms,
+                                                &prefix,
                                             );
                                             if items.is_empty() {
                                                 tab.completion = None;
@@ -390,7 +442,9 @@ pub fn show_editor(
                                 }
                             }
                         }
-                        let _ = fold_view.borrow_mut().replace(buffer_view);
+                        if let Some(view) = fold_buffer.take_updated_view() {
+                            updated_fold_view.borrow_mut().replace(view);
+                        }
                         let _ = text_edit_output.borrow_mut().replace(output);
                     });
             });
@@ -401,9 +455,7 @@ pub fn show_editor(
         .id_salt(format!("{editor_id}_outer_scroll"))
         .show(ui, code_editor);
 
-    let view = fold_view
-        .into_inner()
-        .unwrap_or_else(|| folds::build_fold_view(&tab.content, &tab.folds));
+    let view = updated_fold_view.into_inner().unwrap_or(view0);
     let Some(mut output) = text_edit_output.into_inner() else {
         eprintln!("editor: skipped frame; no TextEdit output available");
         return;

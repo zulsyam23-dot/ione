@@ -6,6 +6,8 @@
 //! - `brackets`: mask-aware bracket scan (pairs, depths, active pair).
 //! - `geometry`: galley pixel math and the low-level guide strokes.
 
+use std::sync::Arc;
+
 use eframe::egui::{self, Id, Pos2};
 use egui::text::CCursorRange;
 
@@ -14,9 +16,9 @@ use crate::style::Palette;
 pub(crate) mod brackets;
 pub(crate) mod geometry;
 
-pub(crate) use brackets::{BracketScan, Pair, analyze_brackets, hovered_pair};
+pub(crate) use brackets::{BracketScan, Pair, analyze_brackets};
 
-use geometry::{char_rect, draw_pair_guide, guide_line, pair_guide_x};
+use geometry::{char_line, char_rect, guide_line, pair_guide_x};
 
 #[derive(Clone, Copy)]
 pub struct EditorOverlay {
@@ -24,12 +26,174 @@ pub struct EditorOverlay {
     pub colorize_brackets: bool,
 }
 
+/// Collapse nested pairs whose closing brackets are stacked together on one
+/// line. Their guides would otherwise form a dense comb at the end of the
+/// same expression; the widest pair represents the whole stacked group.
+fn visible_pairs(
+    galley: &egui::Galley,
+    origin: Pos2,
+    pairs: &[Pair],
+    closing_brackets: &[(usize, char)],
+) -> Vec<Pair> {
+    let mut candidates: Vec<Pair> = pairs
+        .iter()
+        .copied()
+        .filter(|p| p.close != usize::MAX && pair_guide_x(galley, origin, *p).is_some())
+        .collect();
+    candidates.sort_by_key(|p| p.close);
+
+    let mut visible = Vec::new();
+    for pair in candidates {
+        let stacked = visible.last().is_some_and(|previous: &Pair| {
+            char_rect(galley, origin, previous.close).top()
+                == char_rect(galley, origin, pair.close).top()
+                && are_stacked_closers(closing_brackets, previous.close, pair.close)
+        });
+        if !stacked {
+            visible.push(pair);
+        } else if let Some(previous) = visible.last_mut() {
+            let previous_span = previous.close.saturating_sub(previous.open);
+            let pair_span = pair.close.saturating_sub(pair.open);
+            let previous_is_brace = closing_bracket(closing_brackets, previous.close) == Some('}');
+            let pair_is_brace = closing_bracket(closing_brackets, pair.close) == Some('}');
+            if (pair_is_brace && !previous_is_brace)
+                || (pair_is_brace == previous_is_brace && pair_span > previous_span)
+            {
+                *previous = pair;
+            }
+        }
+    }
+    visible
+}
+
+fn representative_pair(
+    candidate: Pair,
+    mut visible: impl Iterator<Item = Pair>,
+    galley: &egui::Galley,
+    closing_brackets: &[(usize, char)],
+) -> Option<Pair> {
+    visible.find(|pair| {
+        if pair.open == candidate.open {
+            return true;
+        }
+        if char_line(galley, pair.close) != char_line(galley, candidate.close) {
+            return false;
+        }
+        are_stacked_closers(
+            closing_brackets,
+            candidate.close.min(pair.close),
+            candidate.close.max(pair.close),
+        )
+    })
+}
+
+fn are_stacked_closers(closing_brackets: &[(usize, char)], start: usize, end: usize) -> bool {
+    let first = closing_brackets.partition_point(|&(index, _)| index < start);
+    let last = closing_brackets.partition_point(|&(index, _)| index <= end);
+    last - first == end - start + 1
+}
+
+fn closing_bracket(closing_brackets: &[(usize, char)], index: usize) -> Option<char> {
+    closing_brackets
+        .binary_search_by_key(&index, |&(index, _)| index)
+        .ok()
+        .map(|i| closing_brackets[i].1)
+}
+
+#[derive(Clone, Copy)]
+struct GuideGeometry {
+    pair: Pair,
+    x: f32,
+    y_start: f32,
+    y_end: f32,
+}
+
+#[derive(Clone, Default)]
+struct GuideGeometryCache {
+    galley: usize,
+    guides: Vec<GuideGeometry>,
+    starts: Vec<usize>,
+}
+
+fn guide_geometries(
+    ui: &egui::Ui,
+    galley: &egui::Galley,
+    scan: &BracketScan,
+    pairs: &[Pair],
+) -> Arc<GuideGeometryCache> {
+    let cache_id = Id::new("guide_geometry");
+    let galley_id = galley as *const egui::Galley as usize;
+    if let Some(cache) = ui
+        .ctx()
+        .data_mut(|data| data.get_temp::<Arc<GuideGeometryCache>>(cache_id))
+        && cache.galley == galley_id
+    {
+        return cache;
+    }
+
+    let origin = Pos2::ZERO;
+    let guides: Vec<GuideGeometry> = visible_pairs(galley, origin, pairs, &scan.closing_brackets)
+        .into_iter()
+        .filter_map(|pair| {
+            let x = pair_guide_x(galley, origin, pair)?;
+            let open_rect = char_rect(galley, origin, pair.open);
+            let close_rect = char_rect(galley, origin, pair.close);
+            let y_start = open_rect.bottom().round();
+            let y_end = close_rect.top().round();
+            (y_end > y_start).then_some(GuideGeometry {
+                pair,
+                x,
+                y_start,
+                y_end,
+            })
+        })
+        .collect();
+    let mut starts: Vec<usize> = (0..guides.len()).collect();
+    starts.sort_by(|&a, &b| guides[a].y_start.total_cmp(&guides[b].y_start));
+    let cache = Arc::new(GuideGeometryCache {
+        galley: galley_id,
+        guides,
+        starts,
+    });
+    ui.ctx()
+        .data_mut(|data| data.insert_temp(cache_id, Arc::clone(&cache)));
+    cache
+}
+
+fn visible_guide_indices(cache: &GuideGeometryCache, clip: egui::Rect) -> Vec<usize> {
+    let first_end = cache
+        .guides
+        .partition_point(|guide| guide.y_end < clip.top());
+    let last_end = cache
+        .guides
+        .partition_point(|guide| guide.y_end <= clip.bottom());
+    let first_start = cache
+        .starts
+        .partition_point(|&index| cache.guides[index].y_start < clip.top());
+    let last_start = cache
+        .starts
+        .partition_point(|&index| cache.guides[index].y_start <= clip.bottom());
+
+    let mut visible = Vec::with_capacity(last_end - first_end + last_start - first_start);
+    visible.extend(first_end..last_end);
+    visible.extend(cache.starts[first_start..last_start].iter().copied());
+    for (index, guide) in cache.guides.iter().enumerate() {
+        if guide.y_start < clip.top() && guide.y_end > clip.bottom() {
+            visible.push(index);
+        }
+    }
+    visible.sort_unstable();
+    visible.dedup();
+    visible
+}
+
 /// Draw bracket guides on top of the rendered editor. `ui` must be the
 /// editor's scroll-content `Ui`: its painter is clipped to the viewport and
 /// translated with the scroll, so the guides always overlay the glyphs exactly
 /// and never bleed into the surrounding ui. `galley`/`galley_pos`/`cursor_range`
 /// come straight from the `TextEdit` (the layouter output for this frame).
-pub fn draw_editor_overlays(
+#[cfg(test)]
+fn draw_editor_overlays(
     ui: &egui::Ui,
     editor_id: &str,
     galley: &egui::Galley,
@@ -40,18 +204,69 @@ pub fn draw_editor_overlays(
     palette: &Palette,
     font_size: f32,
 ) {
+    draw_editor_overlays_with_pairs(
+        ui,
+        editor_id,
+        galley,
+        galley_pos,
+        cursor_range,
+        scan,
+        &scan.pairs,
+        overlay,
+        palette,
+        font_size,
+    );
+}
+
+pub(crate) fn draw_editor_overlays_with_pairs(
+    ui: &egui::Ui,
+    editor_id: &str,
+    galley: &egui::Galley,
+    galley_pos: Pos2,
+    cursor_range: Option<CCursorRange>,
+    scan: &BracketScan,
+    pairs: &[Pair],
+    overlay: &EditorOverlay,
+    palette: &Palette,
+    font_size: f32,
+) {
     let cursor = cursor_range.map(|r| r.primary.index.0);
     // Hover takes precedence: moving the mouse over a guide activates that
     // pair with no click; fall back to the text caret otherwise.
-    let active = ui
-        .input(|i| i.pointer.hover_pos())
-        .and_then(|p| hovered_pair(p, galley, galley_pos, &scan.pairs))
-        .or_else(|| cursor.and_then(|c| scan.active_pair(c)));
+    let guides = if overlay.bracket_guides {
+        guide_geometries(ui, galley, scan, pairs)
+    } else {
+        Arc::new(GuideGeometryCache::default())
+    };
+    let pointer = ui.input(|i| i.pointer.hover_pos());
+    let clip_rect = ui.clip_rect();
+    let local_clip = clip_rect.translate(-galley_pos.to_vec2());
+    let visible_guides = visible_guide_indices(&guides, local_clip);
+    let hovered = pointer
+        .map(|pos| pos - galley_pos.to_vec2())
+        .and_then(|pos| {
+            visible_guides
+                .iter()
+                .map(|&index| &guides.guides[index])
+                .find(|guide| {
+                    (pos.x - guide.x).abs() <= 6.0 && guide.y_start <= pos.y && pos.y <= guide.y_end
+                })
+                .map(|guide| guide.pair)
+        });
+    let active = hovered.or_else(|| {
+        cursor.and_then(|c| scan.active_pair(c)).and_then(|p| {
+            representative_pair(
+                p,
+                visible_guides
+                    .iter()
+                    .map(|&index| guides.guides[index].pair),
+                galley,
+                &scan.closing_brackets,
+            )
+        })
+    });
 
     let painter = ui.painter();
-    let origin = galley_pos;
-    let pairs = &scan.pairs;
-
     if overlay.bracket_guides {
         // First (outermost, depth-0) guide keeps the full width; every deeper
         // level draws thinner so shrinking blocks don't stack up into a solid
@@ -65,10 +280,16 @@ pub fn draw_editor_overlays(
             }
         };
         let color = palette.bracket_guide;
-        for p in pairs.iter().filter(|p| p.close != usize::MAX) {
-            if pair_guide_x(galley, origin, *p).is_some() {
-                draw_pair_guide(&painter, galley, origin, *p, width_for(p), color);
-            }
+        for &index in &visible_guides {
+            let guide = &guides.guides[index];
+            guide_line(
+                &painter,
+                galley_pos.x + guide.x,
+                galley_pos.y + guide.y_start,
+                galley_pos.y + guide.y_end,
+                width_for(&guide.pair),
+                color,
+            );
         }
         // Active-pair highlight fades in/out instead of blinking on/off. Two
         // egui quirks: `animate_bool` snaps to the target on the FIRST call
@@ -101,19 +322,17 @@ pub fn draw_editor_overlays(
             let e = t * t * (3.0 - 2.0 * t);
             // Grow from the vertical middle toward both ends instead of
             // popping in as a full line.
-            if let Some(x) = pair_guide_x(galley, origin, p) {
-                let open_r = char_rect(galley, origin, p.open);
-                let close_r = char_rect(galley, origin, p.close);
-                let y0 = open_r.bottom().round();
-                let y1 = close_r.top().round();
+            if let Some(guide) = guides.guides.iter().find(|guide| guide.pair.open == p.open) {
+                let y0 = guide.y_start;
+                let y1 = guide.y_end;
                 if y1 > y0 {
                     let mid = (y0 + y1) / 2.0;
                     let half_height = (y1 - y0) / 2.0 * e;
                     guide_line(
                         &painter,
-                        x,
-                        mid - half_height,
-                        mid + half_height,
+                        galley_pos.x + guide.x,
+                        galley_pos.y + mid - half_height,
+                        galley_pos.y + mid + half_height,
                         width_for(&p),
                         palette.bracket_active.gamma_multiply(0.95 * e),
                     );
@@ -171,7 +390,9 @@ mod tests {
         let mut painted = Vec::new();
         for cs in &output.shapes {
             if let egui::Shape::Rect(r) = &cs.shape {
-                painted.push((r.rect.left(), r.rect.top(), r.rect.bottom()));
+                if r.rect.width() <= 50.0 && r.rect.height() > 8.0 {
+                    painted.push((r.rect.left(), r.rect.top(), r.rect.bottom()));
+                }
             }
         }
         output.drop_without_applying_deltas();
@@ -342,6 +563,88 @@ mod tests {
         assert!(
             guides[0].1 != guides[1].1,
             "guides on the same row makes no sense: {guides:?}"
+        );
+    }
+
+    #[test]
+    fn parenthesis_pairs_get_guides() {
+        let content = "fn call(\n    first,\n    second,\n) {\n    work();\n}\n";
+        let rects = guide_rects(content);
+        assert!(
+            rects.iter().any(|(_, top, bottom)| bottom > top),
+            "multi-line parenthesis pair must draw a guide: {rects:?}"
+        );
+    }
+
+    #[test]
+    fn stacked_closing_brackets_share_one_guide() {
+        let content = "fn call(\n    nested({\n        value,\n    }))\n";
+        let ctx = egui::Context::default();
+        ctx.set_fonts(egui::FontDefinitions::default());
+        let origin = egui::Pos2::new(4.0, 2.0);
+        let scan = analyze_brackets(&content.chars().collect::<Vec<char>>(), &[]);
+        let expected_x = std::cell::Cell::new(0.0);
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 300.0),
+            )),
+            ..Default::default()
+        };
+        let output = ctx.run_ui(input, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
+                let galley = ui.fonts_mut(|f| {
+                    f.layout_job(LayoutJob::single_section(
+                        content.to_string(),
+                        egui::TextFormat::simple(
+                            egui::FontId::monospace(14.0),
+                            egui::Color32::WHITE,
+                        ),
+                    ))
+                });
+                expected_x.set(
+                    char_rect(&galley, origin, content.find('}').unwrap())
+                        .left()
+                        .round(),
+                );
+                let overlay = EditorOverlay {
+                    bracket_guides: true,
+                    colorize_brackets: false,
+                };
+                draw_editor_overlays(
+                    ui,
+                    "stacked_guide_test",
+                    &galley,
+                    origin,
+                    None,
+                    &scan,
+                    &overlay,
+                    &Palette::dark(),
+                    14.0,
+                );
+            });
+        });
+        let guides: Vec<f32> = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect)
+                    if rect.rect.width() <= 50.0 && rect.rect.height() > 8.0 =>
+                {
+                    Some(rect.rect.left().round())
+                }
+                _ => None,
+            })
+            .collect();
+        output.drop_without_applying_deltas();
+        assert_eq!(
+            guides.len(),
+            1,
+            "stacked closing brackets should share one guide: {guides:?}"
+        );
+        assert!(
+            (guides[0] - expected_x.get()).abs() <= 1.0,
+            "the representative guide should align with `}}`: {guides:?}"
         );
     }
 

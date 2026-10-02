@@ -5,6 +5,8 @@
 //! (diagnostics, folds, completion) on the same truth. Produces `Styled`,
 //! consumed by the editor widget right after the text edit is shown.
 
+use std::sync::Arc;
+
 use eframe::egui::{self, FontId};
 use egui::text::LayoutJob;
 use egui_code_editor::highlighting::Links;
@@ -16,12 +18,12 @@ use crate::style::Palette;
 use super::FONT_SIZE;
 use super::lexer;
 
-/// Per-frame data produced by the layouter for the exact buffer+galley that
-/// will be painted (string/comment mask, bracket depth), cached by the
-/// text-edit layouter and consumed right after `TextEdit::show`.
+/// Cached bracket analysis for the exact buffer+galley painted by the editor.
+/// Shared by the layouter and overlay so reusing a cached galley does not copy
+/// per-character scan data on every frame.
 #[derive(Clone)]
 pub(crate) struct Styled {
-    pub(crate) scan: crate::guides::BracketScan,
+    pub(crate) scan: Arc<crate::guides::BracketScan>,
 }
 
 /// One pass per role: char classes + links, a mask-aware bracket scan, then
@@ -86,7 +88,13 @@ pub(crate) fn layout_styled(
         ci += n;
     }
 
-    (job, links, Styled { scan })
+    (
+        job,
+        links,
+        Styled {
+            scan: Arc::new(scan),
+        },
+    )
 }
 
 /// String/comment mask + link ranges of arbitrary text — also used on the

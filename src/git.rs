@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::mpsc;
 use std::time::Instant;
 
 use eframe::egui::{self, RichText};
@@ -60,6 +61,25 @@ pub struct DiffView {
     pub deleted: bool,
 }
 
+/// Background-worker result, delivered to `GitPanel::poll`.
+enum GitEvent {
+    Scan(ScanOutcome),
+    Diff {
+        generation: u64,
+        view: DiffView,
+    },
+}
+
+/// Status-scan snapshot computed off the UI thread. `generation` lets `poll`
+/// drop results from superseded scans (a user action can force a newer one).
+struct ScanOutcome {
+    generation: u64,
+    repo: Option<PathBuf>,
+    branch: Option<String>,
+    changes: Vec<GitChange>,
+    error: Option<String>,
+}
+
 pub struct GitPanel {
     pub visible: bool,
     /// Repository root resolved from the workspace (`git rev-parse
@@ -73,6 +93,18 @@ pub struct GitPanel {
     /// Transient inline message `(text, is_error, since)`.
     pub message: Option<(String, bool, Instant)>,
     last_run: Instant,
+    /// Channel back from the background scan/diff workers.
+    tx: mpsc::Sender<GitEvent>,
+    rx: mpsc::Receiver<GitEvent>,
+    /// Monotonic generation of the newest scan/diff issued; workers echo it so
+    /// stale results are dropped.
+    scan_gen: u64,
+    diff_gen: u64,
+    scans_in_flight: usize,
+    diffs_in_flight: usize,
+    /// Reset whenever scan results land; guards the `explorer_tints` cache.
+    rev: u64,
+    tints_cache: Option<(PathBuf, u64, HashMap<PathBuf, egui::Color32>)>,
 }
 
 impl Default for GitPanel {
@@ -83,6 +115,7 @@ impl Default for GitPanel {
 
 impl GitPanel {
     pub fn new() -> Self {
+        let (tx, rx) = mpsc::channel();
         Self {
             visible: false,
             repo_root: None,
@@ -93,6 +126,14 @@ impl GitPanel {
             commit_msg: String::new(),
             message: None,
             last_run: Instant::now(),
+            tx,
+            rx,
+            scan_gen: 0,
+            diff_gen: 0,
+            scans_in_flight: 0,
+            diffs_in_flight: 0,
+            rev: 0,
+            tints_cache: None,
         }
     }
 
@@ -106,41 +147,121 @@ impl GitPanel {
     }
 
     /// Re-read branch + status, throttled to `REFRESH_INTERVAL` unless `force`.
+    /// The scan runs on a worker thread, so this never blocks the UI; results
+    /// are applied on the next `poll()`.
     pub fn refresh(&mut self, root: Option<&Path>, now: Instant, force: bool) -> bool {
         let elapsed = now.duration_since(self.last_run);
         if !force && elapsed < REFRESH_INTERVAL {
             return false;
         }
         self.last_run = now;
-        self.run_scan(root);
+        self.spawn_scan(root, force);
         true
     }
 
-    fn run_scan(&mut self, root: Option<&Path>) {
-        let Some(root) = root else {
-            self.clear(Vec::new());
-            return;
-        };
-        match git_toplevel(root) {
-            Ok(repo) => {
-                self.repo_root = Some(repo.clone());
-                self.branch = git_branch(&repo);
-                let parsed = git_run(&repo, &["status", "--porcelain", "-uall"])
-                    .ok()
-                    .map(|o| parse_status(&o))
-                    .unwrap_or_default();
-                self.clear(parsed);
-            }
-            Err(e) => {
-                self.repo_root = None;
-                self.message = Some((e, true, Instant::now()));
-                self.clear(Vec::new());
-            }
-        }
+    /// Whether a background scan or diff is still outstanding.
+    pub fn busy(&self) -> bool {
+        self.scans_in_flight > 0 || self.diffs_in_flight > 0
     }
 
-    fn clear(&mut self, changes: Vec<GitChange>) {
+    /// Queue a status scan on a worker thread. A forced scan supersedes any
+    /// in-flight one via generation numbers; throttled scans queue at most one.
+    fn spawn_scan(&mut self, root: Option<&Path>, force: bool) {
+        if !force && self.scans_in_flight > 0 {
+            return;
+        }
+        if self.scans_in_flight >= 2 {
+            return;
+        }
+        self.scan_gen += 1;
+        let generation = self.scan_gen;
+        self.scans_in_flight += 1;
+        let tx = self.tx.clone();
+        let root = root.map(|p| p.to_path_buf());
+        std::thread::spawn(move || {
+            let outcome = scan_workspace(root.as_deref(), generation);
+            let _ = tx.send(GitEvent::Scan(outcome));
+        });
+    }
+
+    /// Queue a diff for the selected change on a worker thread.
+    fn spawn_diff(&mut self) {
+        let (Some(repo), Some(path)) = (self.repo_root.clone(), self.selected.clone()) else {
+            return;
+        };
+        let Some(change) = self.changes.iter().find(|c| c.path == path).cloned() else {
+            return;
+        };
+        if self.diffs_in_flight >= 4 {
+            return;
+        }
+        self.diff_gen += 1;
+        let generation = self.diff_gen;
+        self.diffs_in_flight += 1;
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            let mut args = vec!["diff"];
+            if change.staged {
+                args.push("--cached");
+            }
+            args.push("--");
+            args.push(path.to_str().unwrap_or_default());
+            let text = match git_run(&repo, &args) {
+                Ok(o) => o,
+                // Binary diffs or transient errors: no readable diff.
+                Err(_) => return,
+            };
+            let _ = tx.send(GitEvent::Diff {
+                generation,
+                view: DiffView {
+                    path,
+                    text,
+                    untracked: change.is_untracked(),
+                    deleted: change.is_deleted(),
+                },
+            });
+        });
+    }
+
+    /// Apply any finished background work to the panel. Returns `true` when a
+    /// rendered field changed and the caller should request a repaint.
+    pub fn poll(&mut self) -> bool {
+        let mut changed = false;
+        while let Ok(event) = self.rx.try_recv() {
+            match event {
+                GitEvent::Scan(outcome) => {
+                    self.scans_in_flight = self.scans_in_flight.saturating_sub(1);
+                    // A newer forced scan supersedes this one; drop stale data.
+                    if outcome.generation != self.scan_gen {
+                        continue;
+                    }
+                    self.repo_root = outcome.repo;
+                    self.branch = outcome.branch;
+                    if let Some(e) = outcome.error {
+                        self.message = Some((e, true, Instant::now()));
+                    }
+                    self.apply_changes(outcome.changes);
+                    changed = true;
+                }
+                GitEvent::Diff { generation, view } => {
+                    self.diffs_in_flight = self.diffs_in_flight.saturating_sub(1);
+                    if generation != self.diff_gen {
+                        continue;
+                    }
+                    // A newer scan may have moved the selection; drop stale diffs.
+                    if self.selected.as_deref() == Some(view.path.as_path()) {
+                        self.diff = Some(view);
+                        changed = true;
+                    }
+                }
+            }
+        }
+        changed
+    }
+
+    fn apply_changes(&mut self, changes: Vec<GitChange>) {
         self.changes = changes;
+        self.rev += 1;
         if self
             .selected
             .as_ref()
@@ -149,7 +270,9 @@ impl GitPanel {
             self.selected = None;
             self.diff = None;
         }
-        self.reload_diff();
+        if self.selected.is_some() {
+            self.spawn_diff();
+        }
     }
 
     /// (staged, worktree, untracked) counts.
@@ -187,15 +310,23 @@ fn has_any(&self) -> bool {
 
     /// Absolute path → text color for the file explorer: changed files plus
     /// every ancestor folder down to `workspace`, so rows enclosing changes
-    /// are tinted too. Returns an empty map when not inside a repository.
+    /// are tinted too. Rebuilt only when the change-set (`rev`) or workspace
+    /// changes; idle frames get the cached map back (`&mut self` only to
+    /// update the cache, no other mutation).
     pub fn explorer_tints(
-        &self,
+        &mut self,
         workspace: &Path,
         palette: &Palette,
     ) -> HashMap<PathBuf, egui::Color32> {
         let Some(repo) = &self.repo_root else {
+            self.tints_cache = None;
             return HashMap::new();
         };
+        if let Some((wk, rev, cached)) = &self.tints_cache {
+            if wk == workspace && *rev == self.rev {
+                return cached.clone();
+            }
+        }
         let mut tints: HashMap<PathBuf, egui::Color32> = HashMap::new();
         for c in &self.changes {
             let abs = repo.join(&c.path);
@@ -225,6 +356,7 @@ fn has_any(&self) -> bool {
                 }
             }
         }
+        self.tints_cache = Some((workspace.to_path_buf(), self.rev, tints.clone()));
         tints
     }
 }
@@ -306,31 +438,6 @@ impl GitPanel {
         }
         self.refresh(Some(&repo), Instant::now(), true);
     }
-
-    fn reload_diff(&mut self) -> Option<()> {
-        let repo = self.repo_root.clone()?;
-        let path = self.selected.clone()?;
-        let change = self.changes.iter().find(|c| c.path == path)?;
-
-        let mut args = vec!["diff"];
-        if change.staged {
-            args.push("--cached");
-        }
-        args.push("--");
-        args.push(path.to_str()?);
-        let text = match git_run(&repo, &args) {
-            Ok(o) => o,
-            // Binary diffs or transient errors: no readable diff.
-            Err(_) => return None,
-        };
-        self.diff = Some(DiffView {
-            path,
-            text,
-            untracked: change.is_untracked(),
-            deleted: change.is_deleted(),
-        });
-        Some(())
-    }
 }
 
 impl GitPanel {
@@ -346,8 +453,18 @@ impl GitPanel {
     ) {
         let ctx = ui.ctx().clone();
         let now = Instant::now();
+        // Apply finished background results first so this frame shows fresh data.
+        if self.poll() {
+            ctx.request_repaint();
+        }
         self.refresh(root.map(|p| p.as_path()), now, false);
-        ctx.request_repaint_after(REFRESH_INTERVAL);
+        // While a scan/diff is in flight, poll frequently; otherwise keep the
+        // throttled cadence so external edits still surface.
+        ctx.request_repaint_after(if self.busy() {
+            std::time::Duration::from_millis(120)
+        } else {
+            REFRESH_INTERVAL
+        });
 
         // Header: title + refresh/close.
         ui.horizontal(|ui| {
@@ -362,7 +479,7 @@ impl GitPanel {
                     .image_button(ui, Icon::Refresh, 14.0, "Refresh status")
                     .clicked()
                 {
-                    self.run_scan(root.map(|p| p.as_path()));
+                    self.spawn_scan(root.map(|p| p.as_path()), true);
                 }
             });
         });
@@ -551,7 +668,7 @@ let age = now.duration_since(since);
                 );
             if label.clicked() {
                 self.selected = Some(c.path.clone());
-                self.reload_diff();
+                self.spawn_diff();
             }
 label.context_menu(|ui| {
                 if !c.is_untracked()
@@ -944,6 +1061,42 @@ fn git_branch(repo: &Path) -> Option<String> {
     }
 }
 
+/// Read-only git snapshot for a workspace root, run on a worker thread.
+fn scan_workspace(root: Option<&Path>, generation: u64) -> ScanOutcome {
+    let Some(root) = root else {
+        return ScanOutcome {
+            generation,
+            repo: None,
+            branch: None,
+            changes: Vec::new(),
+            error: None,
+        };
+    };
+    match git_toplevel(root) {
+        Ok(repo) => {
+            let branch = git_branch(&repo);
+            let changes = git_run(&repo, &["status", "--porcelain", "-uall"])
+                .ok()
+                .map(|o| parse_status(&o))
+                .unwrap_or_default();
+            ScanOutcome {
+                generation,
+                repo: Some(repo),
+                branch,
+                changes,
+                error: None,
+            }
+        }
+        Err(e) => ScanOutcome {
+            generation,
+            repo: None,
+            branch: None,
+            changes: Vec::new(),
+            error: Some(e),
+        },
+    }
+}
+
 /// Parse `git status --porcelain -uall` output into changes.
 pub fn parse_status(out: &str) -> Vec<GitChange> {
     let mut changes = Vec::new();
@@ -1117,4 +1270,3 @@ index 123abc..456def 100644
         assert!(!tints.contains_key(&repo.join("other.rs")));
     }
 }
-
