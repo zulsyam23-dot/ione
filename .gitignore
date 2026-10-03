@@ -3,6 +3,9 @@
 # opencode tooling
 .opencode/
 
+# IDE local config
+.idea/
+
 # logs
 *.log
 run_err.log

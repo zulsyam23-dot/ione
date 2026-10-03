@@ -18,7 +18,7 @@ pub(crate) mod geometry;
 
 pub(crate) use brackets::{BracketScan, Pair, analyze_brackets};
 
-use geometry::{char_line, char_rect, guide_line, pair_guide_x};
+use geometry::{RowStarts, char_line, char_rect_indexed, guide_line, pair_guide_x_indexed};
 
 #[derive(Clone, Copy)]
 pub struct EditorOverlay {
@@ -34,19 +34,22 @@ fn visible_pairs(
     origin: Pos2,
     pairs: &[Pair],
     closing_brackets: &[(usize, char)],
+    rows: &RowStarts,
 ) -> Vec<Pair> {
     let mut candidates: Vec<Pair> = pairs
         .iter()
         .copied()
-        .filter(|p| p.close != usize::MAX && pair_guide_x(galley, origin, *p).is_some())
+        .filter(|p| {
+            p.close != usize::MAX && pair_guide_x_indexed(galley, origin, rows, *p).is_some()
+        })
         .collect();
     candidates.sort_by_key(|p| p.close);
 
     let mut visible = Vec::new();
     for pair in candidates {
         let stacked = visible.last().is_some_and(|previous: &Pair| {
-            char_rect(galley, origin, previous.close).top()
-                == char_rect(galley, origin, pair.close).top()
+            char_rect_indexed(galley, origin, rows, previous.close).top()
+                == char_rect_indexed(galley, origin, rows, pair.close).top()
                 && are_stacked_closers(closing_brackets, previous.close, pair.close)
         });
         if !stacked {
@@ -132,22 +135,24 @@ fn guide_geometries(
     }
 
     let origin = Pos2::ZERO;
-    let guides: Vec<GuideGeometry> = visible_pairs(galley, origin, pairs, &scan.closing_brackets)
-        .into_iter()
-        .filter_map(|pair| {
-            let x = pair_guide_x(galley, origin, pair)?;
-            let open_rect = char_rect(galley, origin, pair.open);
-            let close_rect = char_rect(galley, origin, pair.close);
-            let y_start = open_rect.bottom().round();
-            let y_end = close_rect.top().round();
-            (y_end > y_start).then_some(GuideGeometry {
-                pair,
-                x,
-                y_start,
-                y_end,
+    let rows = RowStarts::new(galley);
+    let guides: Vec<GuideGeometry> =
+        visible_pairs(galley, origin, pairs, &scan.closing_brackets, &rows)
+            .into_iter()
+            .filter_map(|pair| {
+                let x = pair_guide_x_indexed(galley, origin, &rows, pair)?;
+                let open_rect = char_rect_indexed(galley, origin, &rows, pair.open);
+                let close_rect = char_rect_indexed(galley, origin, &rows, pair.close);
+                let y_start = open_rect.bottom().round();
+                let y_end = close_rect.top().round();
+                (y_end > y_start).then_some(GuideGeometry {
+                    pair,
+                    x,
+                    y_start,
+                    y_end,
+                })
             })
-        })
-        .collect();
+            .collect();
     let mut starts: Vec<usize> = (0..guides.len()).collect();
     starts.sort_by(|&a, &b| guides[a].y_start.total_cmp(&guides[b].y_start));
     let cache = Arc::new(GuideGeometryCache {
@@ -344,6 +349,7 @@ pub(crate) fn draw_editor_overlays_with_pairs(
 
 #[cfg(test)]
 mod tests {
+    use super::geometry::char_rect;
     use super::*;
     use egui::text::LayoutJob;
 

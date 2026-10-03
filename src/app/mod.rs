@@ -7,6 +7,7 @@ use crate::file_tree::FileTree;
 use crate::git::GitPanel;
 use crate::guides::EditorOverlay;
 use crate::icons::Icons;
+use crate::loader::FileLoader;
 use crate::loading::LoadingOverlay;
 use crate::menu;
 use crate::outline::OutlinePanel;
@@ -21,6 +22,10 @@ mod chrome;
 mod explorer_bar;
 mod popups;
 mod utils;
+
+/// Minimum time the loading splash stays up once its load has landed, so a
+/// quick open still shows the GIF instead of flashing it for a couple of frames.
+const SPLASH_MIN: Duration = Duration::from_millis(450);
 
 #[derive(Debug, Clone)]
 pub enum AppCommand {
@@ -80,7 +85,11 @@ pub struct EditorApp {
     pub renaming: Option<RenameState>,
     pub naming: Option<NamingState>,
     pub logo: Option<egui::TextureHandle>,
+    /// `(overlay, when it was scheduled)`. `fullscreen` during startup, an
+    /// editor-area splash while a heavy file is being read on a worker thread.
     pub loading: Option<(LoadingOverlay, Instant)>,
+    /// Off-thread reads for heavy files, so opening one never blocks a frame.
+    pub loader: FileLoader,
     pub ctrl_k_pending: bool,
     pub editor_font: String,
     pub font_msg: Option<(String, Instant)>,
@@ -140,6 +149,7 @@ impl Default for EditorApp {
             naming: None,
             logo: None,
             loading: None,
+            loader: FileLoader::new(),
             ctrl_k_pending: false,
             editor_font: "JetBrains Mono".to_string(),
             font_msg: None,
@@ -188,6 +198,43 @@ impl EditorApp {
             bracket_guides: self.bracket_guides,
             colorize_brackets: self.colorize_brackets,
         }
+    }
+
+    /// Apply whatever finished on the file-loader workers: open each tab that
+    /// arrived (its text passes ride along, so the editor has nothing left to
+    /// scan) and surface read errors. The splash is retired by `ui`, on a frame
+    /// that also painted the editor — see the note there.
+    fn pump_loader(&mut self, ctx: &egui::Context) {
+        let (loaded, errors) = self.loader.poll();
+        let landed = !loaded.is_empty() || !errors.is_empty();
+        for file in loaded {
+            self.tabs
+                .open_loaded(file.path.clone(), file.content, file.analysis);
+            crate::settings::push_recent(&mut self.recent_files, file.path);
+        }
+        for e in errors {
+            self.font_msg = Some((e, Instant::now()));
+        }
+        if self.loader.busy() {
+            // Poll again soon so the result lands (and the splash keeps
+            // animating) without waiting on unrelated input.
+            ctx.request_repaint_after(Duration::from_millis(100));
+        } else if landed {
+            // Something just landed: keep the frames coming so the editor gets
+            // painted (behind the veil) and the splash can retire.
+            ctx.request_repaint();
+        }
+    }
+
+    /// Whether the editor splash may retire now. It needs all three: the load is
+    /// done, the minimum display time has passed, and this frame actually painted
+    /// the editor — the first frame of a large file is the expensive one, and it
+    /// has to happen behind the veil rather than after it.
+    fn splash_can_retire(&self, editor_drawn: bool) -> bool {
+        let Some((ov, _)) = &self.loading else {
+            return false;
+        };
+        !ov.fullscreen && editor_drawn && !self.loader.busy() && ov.done(SPLASH_MIN)
     }
 
     /// Ctrl+P file palette: a top-centered window with a query box and the
@@ -293,16 +340,19 @@ impl eframe::App for EditorApp {
     fn ui(&mut self, root_ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root_ui.ctx().clone();
         let mut commands = Vec::new();
+        // Set when this frame painted the editor body; the splash is only
+        // allowed to retire on such a frame.
+        let mut editor_drawn = false;
 
         // Full-screen startup splash blocks everything until it finishes.
-        if let Some((ov, t0)) = &mut self.loading {
-            if ov.fullscreen {
-                ov.show(&ctx, None);
-                if t0.elapsed() >= Duration::from_secs(2) {
-                    self.loading = None;
-                }
-                return;
+        if let Some((ov, t0)) = &mut self.loading
+            && ov.fullscreen
+        {
+            ov.show(&ctx, None);
+            if t0.elapsed() >= Duration::from_secs(2) {
+                self.loading = None;
             }
+            return;
         }
 
         // Editor-area splash is visual only: shed every input event for its
@@ -310,6 +360,11 @@ impl eframe::App for EditorApp {
         if self.loading.is_some() {
             ctx.input_mut(|i| i.events.clear());
         }
+
+        // Land whatever the file-loader workers finished, before anything reads
+        // the tabs: the tab (and its off-thread analysis) must exist by the
+        // time the editor panel below is laid out.
+        self.pump_loader(&ctx);
 
         // Apply the persisted theme/font on the first usable frame (egui's
         // visuals are set up before the app runs, so this overrides them).
@@ -334,13 +389,38 @@ impl eframe::App for EditorApp {
         // Keep the explorer tint / status-bar git snippet current even while the
         // Source Control panel is closed (throttled inside GitPanel to ~900ms).
         // Scans run off the UI thread; `poll` applies whatever finished since
-        // the last frame and repaints when anything changed.
-        if self.show_sidebar || self.git.visible {
+        // the last frame and repaints when anything changed. The same scan
+        // answers the gutter's change markers for the file being edited.
+        let editing = self
+            .tabs
+            .tabs
+            .get(self.tabs.active)
+            .and_then(|t| t.path.clone());
+        if self.show_sidebar || self.git.visible || editing.is_some() {
             let busy = self.git.busy();
-            self.git
-                .refresh(self.file_tree.root.as_deref(), Instant::now(), false);
+            self.git.refresh(
+                self.file_tree.root.as_deref(),
+                Instant::now(),
+                false,
+                editing.as_deref(),
+            );
             if self.git.poll() {
                 ctx.request_repaint();
+            }
+            // Hand the markers to the open file; `mark_rev` keeps this to a
+            // copy per scan rather than per frame.
+            let mark_rev = self.git.mark_rev();
+            if let Some(tab) = self.tabs.tabs.get_mut(self.tabs.active)
+                && tab.path.is_some()
+                && tab.cache.git_marks_rev != mark_rev
+            {
+                let lines = tab
+                    .path
+                    .as_deref()
+                    .map(|path| self.git.marks_for(path).to_vec())
+                    .unwrap_or_default();
+                tab.cache.git_marks = lines;
+                tab.cache.git_marks_rev = mark_rev;
             }
             // A scan/diff is in flight: poll more often so results land promptly.
             if busy {
@@ -459,8 +539,16 @@ impl eframe::App for EditorApp {
 
                 let guides = self.guides();
                 let palette = self.palette;
+                // While the veil is up and the worker is still reading, the
+                // editor body is pure cost: it is covered, and laying out a
+                // large file every frame is what made the spinner stutter.
+                let hidden_behind_veil =
+                    matches!(&self.loading, Some((ov, _)) if !ov.fullscreen) && self.loader.busy();
                 if self.tabs.is_empty() {
                     self.show_empty_state(ui, &ctx);
+                    editor_drawn = true;
+                } else if hidden_behind_veil {
+                    // Nothing to do: the next frame paints it.
                 } else if let Some(tab) = self.tabs.active_tab_mut() {
                     crate::editor::show_editor(
                         ui,
@@ -471,18 +559,24 @@ impl eframe::App for EditorApp {
                         &palette,
                         &mut self.icons,
                     );
+                    editor_drawn = true;
                 }
 
-                // Editor-area splash while a heavy file is being opened.
-                if let Some((ov, _)) = &mut self.loading {
-                    if !ov.fullscreen {
-                        ov.show(&ctx, Some(ui.max_rect()));
-                        if ov.done(Duration::from_millis(600)) {
-                            self.loading = None;
-                        }
-                    }
+                // Editor-area splash while a file is being read on a worker thread.
+                if let Some((ov, _)) = &mut self.loading
+                    && !ov.fullscreen
+                {
+                    ov.show(&ctx, Some(ui.max_rect()));
                 }
             });
+
+        // Retire the editor splash only on a frame that actually painted the
+        // editor with the loaded content: the first frame of a large file is
+        // the expensive one (full-file layout), and paying it behind the veil
+        // is what keeps the app from freezing right after the GIF disappears.
+        if self.splash_can_retire(editor_drawn) {
+            self.loading = None;
+        }
 
         self.show_about_window(&ctx);
         self.show_rename_window(&ctx);
@@ -502,5 +596,195 @@ impl eframe::App for EditorApp {
 
         self.process_commands(commands, &ctx);
         self.show_font_msg(&ctx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A ~2 MB file, written to a temp dir.
+    fn big_file(name: &str) -> (PathBuf, String) {
+        let dir = std::env::temp_dir().join(format!("ione-open-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        // Repetitive but syntactically real Rust: braces, strings, symbols —
+        // enough structure that every text pass has work to do.
+        let unit = "fn unit() {\n    let s = \"a { b\";\n    println!(\"{s}\");\n}\n";
+        let content = unit.repeat(2_000_000 / unit.len() + 64);
+        let path = dir.join(name);
+        std::fs::write(&path, &content).expect("write big file");
+        (path, content)
+    }
+
+    fn app_without_startup_splash() -> EditorApp {
+        let mut app = EditorApp::new();
+        // Drop the one-shot startup splash; this test is about file opens.
+        app.loading = None;
+        app
+    }
+
+    /// Paint one frame of the editor area, the way `ui()` does: this is what
+    /// starts the veil's display clock (`LoadingOverlay::done` counts from the
+    /// first painted frame, not from when it was scheduled).
+    fn paint_one_frame(ctx: &egui::Context, app: &mut EditorApp) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 600.0),
+            )),
+            ..Default::default()
+        };
+        ctx.run_ui(input, |ui| {
+            if let Some((ov, _)) = &mut app.loading {
+                ov.show(ctx, Some(ui.max_rect()));
+            }
+        })
+        .drop_without_applying_deltas();
+    }
+
+    #[test]
+    fn a_small_file_also_opens_off_thread_behind_the_splash() {
+        let ctx = egui::Context::default();
+        ctx.set_fonts(egui::FontDefinitions::default());
+        let mut app = app_without_startup_splash();
+        let recents_before = app.recent_files.clone();
+        let dir = std::env::temp_dir().join(format!("ione-open-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("small.rs");
+        std::fs::write(&path, "fn main() {}\n").expect("write");
+
+        app.open_path(path.clone());
+
+        // Every open goes through the worker, so every open shows the GIF.
+        assert!(app.tabs.is_empty(), "nothing is read on the UI thread");
+        assert!(app.loader.busy());
+        let (ov, _) = app.loading.as_ref().expect("veil is up");
+        assert!(!ov.fullscreen, "the chrome must stay visible");
+        assert_eq!(
+            ov.caption.as_ref().map(|(t, _)| t.as_str()),
+            Some("small.rs")
+        );
+
+        for _ in 0..400 {
+            paint_one_frame(&ctx, &mut app);
+            app.pump_loader(&ctx);
+            if !app.tabs.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(app.tabs.tabs.len(), 1);
+        assert_eq!(app.tabs.tabs[0].content, "fn main() {}\n");
+
+        crate::settings::save_recents(&recents_before);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_big_file_loads_off_thread_behind_the_splash() {
+        let ctx = egui::Context::default();
+        ctx.set_fonts(egui::FontDefinitions::default());
+        let mut app = app_without_startup_splash();
+        let recents_before = app.recent_files.clone();
+        let (path, content) = big_file("heavy.rs");
+
+        app.open_path(path.clone());
+
+        // The tab is *not* there yet — nothing was read on this thread.
+        assert!(app.tabs.is_empty());
+        assert!(app.loader.busy());
+        let (ov, _) = app.loading.as_ref().expect("veil is up");
+        assert!(!ov.fullscreen, "the chrome must stay visible");
+        let (title, detail) = ov.caption.as_ref().expect("caption");
+        assert_eq!(title, "heavy.rs");
+        assert!(detail.contains("MB"), "caption shows the size: {detail}");
+
+        // Pump frames the way `ui()` does until the worker lands.
+        for _ in 0..400 {
+            paint_one_frame(&ctx, &mut app);
+            app.pump_loader(&ctx);
+            if !app.tabs.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        assert_eq!(app.tabs.tabs.len(), 1, "the worker never delivered");
+        assert_eq!(app.tabs.tabs[0].content, content);
+        assert_eq!(app.tabs.tabs[0].path.as_deref(), Some(path.as_path()));
+        assert!(
+            app.recent_files.contains(&path),
+            "opened files go to recents"
+        );
+        // The analysis rode along, ready for the editor's first frame.
+        assert!(app.tabs.tabs[0].pending_analysis.is_some());
+        assert!(!app.loader.busy());
+
+        crate::settings::save_recents(&recents_before);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn the_veil_survives_at_least_its_minimum_display_time() {
+        let ctx = egui::Context::default();
+        ctx.set_fonts(egui::FontDefinitions::default());
+        let mut app = app_without_startup_splash();
+        // A finished load with nothing in flight: only the minimum display
+        // time and a painted editor frame stand between the veil and its
+        // dismissal.
+        app.loading = Some((
+            LoadingOverlay::editor_area(("x.rs".into(), "2.0 MB".into())).expect("splash"),
+            Instant::now(),
+        ));
+
+        paint_one_frame(&ctx, &mut app);
+        app.pump_loader(&ctx);
+        assert!(
+            app.loading.is_some(),
+            "a fast open must not flash the overlay for one frame"
+        );
+        assert!(
+            !app.splash_can_retire(true),
+            "the minimum display time has to hold first"
+        );
+
+        std::thread::sleep(SPLASH_MIN + Duration::from_millis(20));
+        assert!(
+            app.splash_can_retire(true),
+            "after the minimum time a painted frame may retire it"
+        );
+        assert!(
+            !app.splash_can_retire(false),
+            "but never on a frame that skipped the editor"
+        );
+    }
+
+    #[test]
+    fn reopening_an_open_tab_does_not_reload_it() {
+        let mut app = app_without_startup_splash();
+        let (path, content) = big_file("reopen.rs");
+        let recents_before = app.recent_files.clone();
+
+        app.open_path(path.clone());
+        for _ in 0..400 {
+            app.pump_loader(&egui::Context::default());
+            if !app.tabs.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(app.tabs.tabs.len(), 1);
+
+        // A second open of the same path focuses the existing tab and starts
+        // no new work — no veil, no duplicate tab.
+        app.loading = None;
+        app.open_path(path.clone());
+        assert_eq!(app.tabs.tabs.len(), 1);
+        assert_eq!(app.tabs.tabs[0].content, content);
+        assert!(!app.loader.busy());
+        assert!(app.loading.is_none());
+
+        crate::settings::save_recents(&recents_before);
+        let _ = std::fs::remove_file(&path);
     }
 }

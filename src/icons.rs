@@ -41,6 +41,8 @@ pub enum Icon {
     LangToml,
     LangYaml,
     LangMarkdown,
+    LangLicense,
+    LangGitignore,
     LangConfig,
     LangPlain,
 }
@@ -85,6 +87,8 @@ impl Icon {
             Icon::LangToml => include_str!("../assets/icons/lang/lang-toml.svg"),
             Icon::LangYaml => include_str!("../assets/icons/lang/lang-yaml.svg"),
             Icon::LangMarkdown => include_str!("../assets/icons/lang/lang-markdown.svg"),
+            Icon::LangLicense => include_str!("../assets/icons/lang/lang-license.svg"),
+            Icon::LangGitignore => include_str!("../assets/icons/lang/lang-gitignore.svg"),
             Icon::LangConfig => include_str!("../assets/icons/lang/lang-config.svg"),
             Icon::LangPlain => include_str!("../assets/icons/lang/lang-plain.svg"),
         }
@@ -129,6 +133,8 @@ impl Icon {
             Icon::LangToml => "lang-toml",
             Icon::LangYaml => "lang-yaml",
             Icon::LangMarkdown => "lang-markdown",
+            Icon::LangLicense => "lang-license",
+            Icon::LangGitignore => "lang-gitignore",
             Icon::LangConfig => "lang-config",
             Icon::LangPlain => "lang-plain",
         }

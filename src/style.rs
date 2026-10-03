@@ -9,6 +9,9 @@ pub struct Palette {
     pub border: Color32,
     pub text: Color32,
     pub text_muted: Color32,
+    /// Terminal canvas. Its own colour rather than `panel`, because the grid is
+    /// drawn cell by cell and the default VT background must match it exactly.
+    pub terminal_bg: Color32,
     /// Editor background as a hex string (no '#') to override the CodeEditor theme.
     pub editor_bg: &'static str,
     pub bracket_guide: Color32,
@@ -18,6 +21,9 @@ pub struct Palette {
     pub diag_error: Color32,
     /// Warning squiggle / gutter marker.
     pub diag_warning: Color32,
+    /// Added-line green, shared by the Source Control panel and the editor's
+    /// unsaved-change markers.
+    pub added: Color32,
 }
 
 impl Palette {
@@ -31,6 +37,7 @@ impl Palette {
             border: Color32::from_rgb(38, 38, 38),
             text: Color32::from_rgb(220, 220, 222),
             text_muted: Color32::from_rgb(140, 140, 145),
+            terminal_bg: Color32::from_rgb(12, 12, 12),
             editor_bg: "000000",
             bracket_guide: Color32::from_rgba_unmultiplied(160, 165, 185, 70),
             bracket_active: Color32::from_rgba_unmultiplied(90, 160, 255, 200),
@@ -42,6 +49,7 @@ impl Palette {
             ],
             diag_error: Color32::from_rgb(255, 84, 84),
             diag_warning: Color32::from_rgb(255, 187, 68),
+            added: Color32::from_rgb(115, 200, 120),
         }
     }
 
@@ -55,6 +63,7 @@ impl Palette {
             border: Color32::from_rgb(224, 226, 231),
             text: Color32::from_rgb(40, 42, 48),
             text_muted: Color32::from_rgb(112, 115, 124),
+            terminal_bg: Color32::from_rgb(255, 255, 255),
             editor_bg: "ffffff",
             bracket_guide: Color32::from_rgba_unmultiplied(70, 75, 95, 80),
             bracket_active: Color32::from_rgba_unmultiplied(56, 120, 255, 205),
@@ -66,6 +75,7 @@ impl Palette {
             ],
             diag_error: Color32::from_rgb(214, 42, 42),
             diag_warning: Color32::from_rgb(186, 122, 34),
+            added: Color32::from_rgb(26, 127, 55),
         }
     }
 }

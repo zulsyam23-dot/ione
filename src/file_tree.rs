@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use eframe::egui;
 
 use crate::app::AppCommand;
+use crate::gitignore::Ignores;
 use crate::icons::{Icon, Icons};
 use crate::style::Palette;
 
@@ -36,21 +37,29 @@ impl FileTree {
         if root.is_dir() {
             self.expanded.push(root.clone());
             self.root = Some(root.clone());
-            self.scan_dir(&root, 0);
+            let mut ignores = Ignores::new();
+            self.scan_dir(&root, 0, &mut ignores);
         }
     }
 
-    fn scan_dir(&mut self, dir: &Path, depth: usize) {
+    fn scan_dir(&mut self, dir: &Path, depth: usize, ignores: &mut Ignores) {
         // Recursive (inline parent→children order in `entries`); depth-capped
         // so a junction loop (Windows) can't recurse forever.
         const MAX_SCAN_DEPTH: usize = 256;
         if depth > MAX_SCAN_DEPTH {
             return;
         }
+        ignores.enter(dir);
         let mut entries: Vec<_> = match std::fs::read_dir(dir) {
             Ok(rd) => rd
                 .filter_map(|e| e.ok())
-                .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
+                // Dotfiles stay hidden, except `.gitignore`: it is a real
+                // project file, and being able to open and edit it is the
+                // point of honouring it in the first place.
+                .filter(|e| {
+                    let name = e.file_name().to_string_lossy().into_owned();
+                    !name.starts_with('.') || name.eq_ignore_ascii_case(".gitignore")
+                })
                 .collect(),
             Err(_) => return,
         };
@@ -66,6 +75,10 @@ impl FileTree {
         for entry in entries {
             let path = entry.path();
             let is_dir = path.is_dir();
+            // Ignored paths are dropped whole, subtrees included.
+            if ignores.is_ignored(&path, is_dir) {
+                continue;
+            }
             let name = path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
@@ -79,15 +92,17 @@ impl FileTree {
             });
 
             if is_dir && self.expanded.contains(&path) {
-                self.scan_dir(&path, depth + 1);
+                self.scan_dir(&path, depth + 1, ignores);
             }
         }
+        ignores.leave(dir);
     }
 
     pub fn refresh(&mut self) {
         if let Some(root) = self.root.clone() {
             self.entries.clear();
-            self.scan_dir(&root, 0);
+            let mut ignores = Ignores::new();
+            self.scan_dir(&root, 0, &mut ignores);
         }
     }
 
@@ -290,6 +305,22 @@ impl FileTree {
 }
 
 fn file_icon(name: &str) -> Icon {
+    // Licenses are recognised by name rather than extension: `LICENSE`,
+    // `LICENSE.md`, `COPYING` and `NOTICE` all mean the same thing, and the
+    // point of the icon is to spot them at a glance.
+    let stem = name.split('.').next().unwrap_or(name).to_ascii_lowercase();
+    if matches!(stem.as_str(), "license" | "licence" | "copying" | "notice") {
+        return Icon::LangLicense;
+    }
+    // `.gitignore` has no extension to key off: `rsplit` would hand back the
+    // whole dot name, so match the file name itself.
+    let lower = name.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        ".gitignore" | ".npmignore" | ".dockerignore"
+    ) {
+        return Icon::LangGitignore;
+    }
     match name.rsplit('.').next() {
         Some("rs") => Icon::LangRust,
         Some("py") => Icon::LangPython,
@@ -313,6 +344,61 @@ fn file_icon(name: &str) -> Icon {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn license_files_get_their_own_icon() {
+        for name in [
+            "LICENSE",
+            "license",
+            "LICENCE",
+            "LICENSE.md",
+            "License.txt",
+            "COPYING",
+            "NOTICE",
+        ] {
+            assert!(matches!(file_icon(name), Icon::LangLicense), "{name}");
+        }
+    }
+
+    #[test]
+    fn other_documents_keep_their_own_icons() {
+        assert!(matches!(file_icon("README.md"), Icon::LangMarkdown));
+        assert!(matches!(file_icon("notes.txt"), Icon::LangPlain));
+        assert!(matches!(file_icon("main.rs"), Icon::LangRust));
+    }
+
+    #[test]
+    fn ignore_files_get_their_own_icon() {
+        for name in [".gitignore", ".GITIGNORE", ".npmignore", ".dockerignore"] {
+            assert!(matches!(file_icon(name), Icon::LangGitignore), "{name}");
+        }
+    }
+
+    #[test]
+    fn the_scan_hides_gitignored_paths_but_keeps_the_ignore_file() {
+        let dir = std::env::temp_dir().join(format!("ione_ignore_test_{}", std::process::id()));
+        let src = dir.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(dir.join("target")).unwrap();
+        std::fs::write(dir.join(".gitignore"), "target/\n*.log\n").unwrap();
+        std::fs::write(src.join("main.rs"), "").unwrap();
+        std::fs::write(src.join("debug.log"), "").unwrap();
+
+        let mut tree = FileTree::new();
+        tree.set_root(dir.clone());
+        tree.expanded.push(src.clone());
+        tree.refresh();
+
+        let names: Vec<String> = tree.entries.iter().map(|e| e.name.clone()).collect();
+        assert!(names.contains(&"main.rs".to_string()), "{names:?}");
+        assert!(names.contains(&"src".to_string()), "{names:?}");
+        // The `.gitignore` is a real project file: it has to be openable.
+        assert!(names.contains(&".gitignore".to_string()), "{names:?}");
+        assert!(!names.contains(&"target".to_string()), "{names:?}");
+        assert!(!names.contains(&"debug.log".to_string()), "{names:?}");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn expanded_children_stay_inline_under_their_folder() {

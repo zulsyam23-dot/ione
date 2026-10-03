@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use egui_code_editor::Syntax;
@@ -41,6 +41,11 @@ pub struct Tab {
     pub completion: Option<crate::completion::CompletionState>,
     /// Content hash the cached passes were computed from (see `refresh_cache`).
     pub diag_hash: u64,
+    /// Text-derived passes for `content`, computed on a worker thread when the
+    /// file was opened (see `loader`). The first `refresh_cache` consumes it —
+    /// and only when the content hash and syntax still match, so an edit that
+    /// lands first can never pick up stale scan data. `None` afterwards.
+    pub pending_analysis: Option<Box<crate::loader::Analysis>>,
     /// Memoized per-character artifacts. Everything is keyed on the content
     /// hash: recomputed once per content change, reused for frames after that.
     /// `view` is additionally keyed on the fold set (see `fold_view_cache`).
@@ -62,8 +67,10 @@ pub struct TabCache {
     pub diag_rows: Vec<(usize, crate::diagnostics::Severity)>,
     pub filtered_pairs_galley: Option<std::sync::Arc<eframe::egui::Galley>>,
     pub filtered_pairs: Vec<crate::guides::Pair>,
-    /// Fold view keyed on `(content hash, fold fingerprint, view)`.
-    pub fold_view_cache: Option<(u64, u64, crate::editor::folds::FoldView)>,
+    /// Fold view keyed on `(content hash, fold fingerprint, view)`. Shared, not
+    /// owned: idle frames take an `Arc` clone instead of copying the display
+    /// string and the display->real map (megabytes on a large file).
+    pub fold_view_cache: Option<(u64, u64, std::sync::Arc<crate::editor::folds::FoldView>)>,
     /// Style key covering theme/overlay/palette/syntax for the mask+links.
     pub style_key: u64,
     /// Cached editor galley: `(style_key, text_hash, font_generation,
@@ -82,6 +89,11 @@ pub struct TabCache {
     /// Gutter text reused across frames and rebuilt only when content/folds change.
     pub gutter_key: Option<(u64, u64)>,
     pub gutter_text: String,
+    /// Changed lines git reports for this file, copied from the Source Control
+    /// panel's scan. `git_marks_rev` is the panel revision they came from, so
+    /// the gutter picks up new markers exactly once per scan.
+    pub git_marks: Vec<usize>,
+    pub git_marks_rev: u64,
 }
 
 impl Default for TabCache {
@@ -103,6 +115,8 @@ impl Default for TabCache {
             job_cache: None,
             gutter_key: None,
             gutter_text: String::new(),
+            git_marks: Vec::new(),
+            git_marks_rev: 0,
         }
     }
 }
@@ -126,6 +140,7 @@ impl Tab {
             completion: None,
             cache: TabCache::default(),
             diag_hash: 0,
+            pending_analysis: None,
         }
     }
 
@@ -151,6 +166,7 @@ impl Tab {
             completion: None,
             cache: TabCache::default(),
             diag_hash: 0,
+            pending_analysis: None,
         }
     }
 
@@ -166,6 +182,11 @@ impl Tab {
     /// content hash or the active style changed. Runs once per frame at most;
     /// no-op on idle frames. Returns the content hash so callers skip their
     /// own O(content) scan.
+    ///
+    /// A `pending_analysis` handed over by the loader (a heavy file opened on a
+    /// worker thread) replaces the four O(content) passes below, so the first
+    /// frame after such an open does no scanning at all. It is only accepted
+    /// when the content hash and syntax still match the buffer.
     pub fn refresh_cache(
         &mut self,
         theme: crate::theme::Theme,
@@ -181,9 +202,52 @@ impl Tab {
         if hash == self.diag_hash && self.cache.style_key == style_key {
             return hash;
         }
-        let (d, scan, mask) = crate::diagnostics::analyze_with_scan(&self.content, &self.syntax);
-        let symbols = crate::outline::extract_symbols(&self.content, &self.syntax);
-        let fold_opens = crate::editor::folds::foldable_opens(&self.content, &scan.brace_pairs);
+        // Take it either way: a mismatched result is dead weight, and holding
+        // it would let a later edit accidentally match it.
+        let offloaded = self
+            .pending_analysis
+            .take()
+            .filter(|a| a.hash == hash && a.syntax == self.syntax);
+        let (d, scan, mask, symbols, fold_opens, fold_view_cache) = match offloaded {
+            Some(a) => {
+                let crate::loader::Analysis {
+                    diagnostics,
+                    scan,
+                    mask,
+                    symbols,
+                    fold_opens,
+                    fold_view,
+                    ..
+                } = *a;
+                let fold_view_cache = if self.folds.is_empty() {
+                    // A just-opened tab has no folds, which is exactly the
+                    // state the worker built the view for.
+                    Some((
+                        hash,
+                        crate::editor::folds::fold_fp(&self.folds),
+                        std::sync::Arc::new(fold_view),
+                    ))
+                } else {
+                    None
+                };
+                (
+                    diagnostics,
+                    scan,
+                    mask,
+                    symbols,
+                    fold_opens,
+                    fold_view_cache,
+                )
+            }
+            None => {
+                let (d, scan, mask) =
+                    crate::diagnostics::analyze_with_scan(&self.content, &self.syntax);
+                let symbols = crate::outline::extract_symbols(&self.content, &self.syntax);
+                let fold_opens =
+                    crate::editor::folds::foldable_opens(&self.content, &scan.brace_pairs);
+                (d, scan, mask, symbols, fold_opens, None)
+            }
+        };
         self.cache = TabCache {
             diagnostics: d,
             symbols,
@@ -196,11 +260,13 @@ impl Tab {
             diag_rows: Vec::new(),
             filtered_pairs_galley: None,
             filtered_pairs: Vec::new(),
-            fold_view_cache: None,
+            fold_view_cache,
             style_key,
             job_cache: None,
             gutter_key: None,
             gutter_text: String::new(),
+            git_marks: Vec::new(),
+            git_marks_rev: 0,
         };
         self.diag_hash = hash;
         hash
@@ -220,15 +286,33 @@ impl TabManager {
         }
     }
 
-    pub fn open_file(&mut self, path: PathBuf, content: String, syntax: Syntax) {
-        for (i, tab) in self.tabs.iter().enumerate() {
-            if tab.path.as_ref() == Some(&path) {
-                self.active = i;
-                return;
-            }
+    /// Index of the tab already showing `path`. Re-opening focuses that tab
+    /// instead of reading the file a second time.
+    pub fn index_of(&self, path: &Path) -> Option<usize> {
+        self.tabs
+            .iter()
+            .position(|t| t.path.as_deref() == Some(path))
+    }
+
+    /// Open a file whose content *and* text passes were produced on a worker
+    /// thread, so the first editor frame has nothing left to scan. Returns the
+    /// index of the tab it opened (or focused, if the path was already open).
+    pub fn open_loaded(
+        &mut self,
+        path: PathBuf,
+        content: String,
+        analysis: Box<crate::loader::Analysis>,
+    ) -> usize {
+        if let Some(i) = self.index_of(&path) {
+            self.active = i;
+            return i;
         }
+        let syntax = analysis.syntax.clone();
         self.tabs.push(Tab::from_file(path, content, syntax));
-        self.active = self.tabs.len() - 1;
+        let idx = self.tabs.len() - 1;
+        self.tabs[idx].pending_analysis = Some(analysis);
+        self.active = idx;
+        idx
     }
 
     pub fn new_file(&mut self, name: &str, syntax: Syntax) {
@@ -625,5 +709,130 @@ mod tests {
             TabManager::detect_syntax(&PathBuf::from("note.txt")).language(),
             "plain"
         );
+    }
+
+    fn themed_refresh(tab: &mut Tab) -> u64 {
+        tab.refresh_cache(
+            crate::theme::Theme::GithubDark,
+            "000000",
+            &crate::guides::EditorOverlay {
+                bracket_guides: true,
+                colorize_brackets: true,
+            },
+            &crate::style::Palette::dark(),
+        )
+    }
+
+    const SAMPLE: &str = "fn main() {\n    let s = \"a { b\";\n    println!(\"{s}\");\n}\n";
+
+    #[test]
+    fn gutter_markers_are_taken_from_git_not_from_the_buffer() {
+        // A fresh tab has no markers until a git scan hands some over; the
+        // panel's revision makes the handoff happen exactly once.
+        let syntax = TabManager::detect_syntax(&PathBuf::from("main.rs"));
+        let mut tab = Tab::from_file(PathBuf::from("main.rs"), SAMPLE.into(), syntax);
+        assert!(tab.cache.git_marks.is_empty());
+        assert_eq!(tab.cache.git_marks_rev, 0);
+
+        tab.cache.git_marks = vec![1, 4];
+        tab.cache.git_marks_rev = 7;
+        assert_eq!(tab.cache.git_marks, vec![1, 4]);
+        assert_eq!(tab.cache.git_marks_rev, 7);
+    }
+
+    #[test]
+    fn an_offthread_analysis_feeds_the_cache_and_is_consumed() {
+        let syntax = TabManager::detect_syntax(&PathBuf::from("main.rs"));
+        let analysis = crate::loader::analyze(SAMPLE, &syntax);
+        let mut tab = Tab::from_file(PathBuf::from("main.rs"), SAMPLE.into(), syntax.clone());
+        tab.pending_analysis = Some(Box::new(analysis));
+        assert!(tab.pending_analysis.is_some());
+
+        let hash = themed_refresh(&mut tab);
+        assert_eq!(hash, crate::diagnostics::hash_content(SAMPLE));
+        // Consumed: it must not linger and be applied to some later content.
+        assert!(tab.pending_analysis.is_none());
+
+        let (d, scan, mask) = crate::diagnostics::analyze_with_scan(SAMPLE, &syntax);
+        assert_eq!(tab.cache.diagnostics.len(), d.len());
+        assert_eq!(tab.cache.mask, mask);
+        assert_eq!(tab.cache.scan.brace_pairs.len(), scan.brace_pairs.len());
+        // The worker also built the fold view for the fold-less state.
+        let fold_view = tab.cache.fold_view_cache.as_ref().expect("seeded");
+        assert_eq!(fold_view.2.display, SAMPLE);
+    }
+
+    #[test]
+    fn an_analysis_for_other_content_is_dropped_not_applied() {
+        let syntax = TabManager::detect_syntax(&PathBuf::from("main.rs"));
+        let stale = crate::loader::analyze(SAMPLE, &syntax);
+        let edited = "fn main() {\n    let s = \"changed\";\n    println!(\"{s}\");\n}\n";
+        let mut tab = Tab::from_file(PathBuf::from("main.rs"), edited.into(), syntax.clone());
+        tab.pending_analysis = Some(Box::new(stale));
+
+        let hash = themed_refresh(&mut tab);
+        assert_eq!(hash, crate::diagnostics::hash_content(edited));
+        assert!(
+            tab.pending_analysis.is_none(),
+            "stale analysis must be dropped"
+        );
+        // The cache describes the edited buffer, not the stale one.
+        let (expected, _, _) = crate::diagnostics::analyze_with_scan(edited, &syntax);
+        let got: Vec<_> = tab
+            .cache
+            .diagnostics
+            .iter()
+            .map(|d| (d.start, d.end, d.message.clone()))
+            .collect();
+        let want: Vec<_> = expected
+            .iter()
+            .map(|d| (d.start, d.end, d.message.clone()))
+            .collect();
+        assert_eq!(got, want);
+        assert_eq!(
+            tab.cache.fold_opens,
+            crate::editor::folds::foldable_opens(edited, &tab.cache.scan.brace_pairs)
+        );
+        assert!(tab.cache.fold_view_cache.is_none());
+    }
+
+    #[test]
+    fn an_analysis_for_another_syntax_is_dropped() {
+        let rust = TabManager::detect_syntax(&PathBuf::from("main.rs"));
+        let analysis = crate::loader::analyze(SAMPLE, &rust);
+        // A tab whose language changed (Save As to a .txt) can't reuse it.
+        let mut tab = Tab::from_file(
+            PathBuf::from("main.txt"),
+            SAMPLE.into(),
+            TabManager::detect_syntax(&PathBuf::from("main.txt")),
+        );
+        tab.pending_analysis = Some(Box::new(analysis));
+
+        themed_refresh(&mut tab);
+        assert!(tab.pending_analysis.is_none());
+    }
+
+    #[test]
+    fn opening_a_loaded_file_keeps_its_analysis_on_the_new_tab() {
+        let mut mgr = TabManager::new();
+        let path = PathBuf::from("big.rs");
+        let syntax = TabManager::detect_syntax(&path);
+        let analysis = crate::loader::analyze(SAMPLE, &syntax);
+
+        let idx = mgr.open_loaded(path.clone(), SAMPLE.into(), Box::new(analysis));
+        assert_eq!(idx, 0);
+        assert_eq!(mgr.active, 0);
+        assert!(mgr.tabs[0].pending_analysis.is_some());
+        assert_eq!(mgr.tabs[0].syntax, syntax);
+
+        // Re-opening the same path focuses the tab instead of reading again.
+        let again = mgr.open_loaded(
+            path,
+            String::new(),
+            Box::new(crate::loader::analyze("", &mgr.tabs[0].syntax.clone())),
+        );
+        assert_eq!(again, 0);
+        assert_eq!(mgr.tabs.len(), 1);
+        assert_eq!(mgr.tabs[0].content, SAMPLE, "content must not be clobbered");
     }
 }

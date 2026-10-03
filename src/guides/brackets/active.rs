@@ -6,7 +6,7 @@
 use eframe::egui::{self, Pos2};
 
 #[cfg(test)]
-use crate::guides::geometry::{char_line, char_rect, pair_guide_x};
+use crate::guides::geometry::{RowStarts, char_rect, char_rect_indexed, pair_guide_x_indexed};
 
 use super::{BracketScan, Pair};
 
@@ -21,19 +21,17 @@ pub(crate) fn hovered_pair(
     pairs: &[Pair],
 ) -> Option<Pair> {
     const TOL: f32 = 6.0;
+    let rows = RowStarts::new(galley);
     let mut best: Option<Pair> = None;
     for p in pairs.iter().filter(|p| p.close != usize::MAX) {
-        if char_line(galley, p.open) == char_line(galley, p.close) {
-            continue;
-        }
-        let Some(x) = pair_guide_x(galley, origin, *p) else {
+        let Some(x) = pair_guide_x_indexed(galley, origin, &rows, *p) else {
             continue;
         };
         if (pointer.x - x).abs() > TOL {
             continue;
         }
-        let open_r = char_rect(galley, origin, p.open);
-        let close_r = char_rect(galley, origin, p.close);
+        let open_r = char_rect_indexed(galley, origin, &rows, p.open);
+        let close_r = char_rect_indexed(galley, origin, &rows, p.close);
         if open_r.bottom() <= pointer.y && pointer.y <= close_r.top() {
             best = Some(*p);
         }

@@ -74,17 +74,20 @@ pub fn show_editor(
     let content_hash0 = tab.refresh_cache(theme, editor_bg, overlay, palette);
 
     // Real-content structure: prunes stale folds, lists foldable rows, and
-    // lets guides suppress pairs whose match is hidden behind a fold.
-    let valid: std::collections::HashSet<usize> = tab
-        .cache
-        .scan
-        .brace_pairs
-        .iter()
-        .filter(|b| b.close != usize::MAX)
-        .map(|b| b.open)
-        .collect();
-
-    tab.folds.retain(|f| valid.contains(&f.open));
+    // lets guides suppress pairs whose match is hidden behind a fold. Only
+    // folds can go stale, so a tab without them (every freshly opened file)
+    // skips the whole set build instead of walking every brace pair per frame.
+    if !tab.folds.is_empty() {
+        let valid: std::collections::HashSet<usize> = tab
+            .cache
+            .scan
+            .brace_pairs
+            .iter()
+            .filter(|b| b.close != usize::MAX)
+            .map(|b| b.open)
+            .collect();
+        tab.folds.retain(|f| valid.contains(&f.open));
+    }
 
     // Input preprocessing (mutually exclusive, in order): multi-select batch
     // edit, autocomplete pick/accept, then the typing helpers (auto-close,
@@ -114,8 +117,9 @@ pub fn show_editor(
 
     // Display layout for this frame (used by the gutter and the guides). The
     // fold view changes only when the content or the fold set does, so idle
-    // frames clone the cached one instead of re-laying the whole file, and the
-    // `FoldBuffer` reuses it instead of building the file a second time.
+    // frames share the cached one (an `Arc` clone, never a copy of the
+    // display string and its display->real map), and the `FoldBuffer` reuses
+    // it instead of building the file a second time.
     let fold_fp = folds::fold_fp(&tab.folds);
     let view0 = if tab
         .cache
@@ -123,15 +127,10 @@ pub fn show_editor(
         .as_ref()
         .is_some_and(|(h, f, _)| *h == content_hash0 && *f == fold_fp)
     {
-        tab.cache
-            .fold_view_cache
-            .as_ref()
-            .expect("just checked")
-            .2
-            .clone()
+        std::sync::Arc::clone(&tab.cache.fold_view_cache.as_ref().expect("just checked").2)
     } else {
-        let v = folds::build_fold_view(&tab.content, &tab.folds);
-        tab.cache.fold_view_cache = Some((content_hash0, fold_fp, v.clone()));
+        let v = std::sync::Arc::new(folds::build_fold_view(&tab.content, &tab.folds));
+        tab.cache.fold_view_cache = Some((content_hash0, fold_fp, std::sync::Arc::clone(&v)));
         v
     };
     if tab.cache.gutter_key != Some((content_hash0, fold_fp)) {
@@ -167,6 +166,9 @@ pub fn show_editor(
         tab.cache.diag_rows_key = Some((content_hash0, fold_fp));
     }
     let diag_rows = &tab.cache.diag_rows;
+    // Change markers come from the Source Control panel's git scan, so they
+    // track the same change set it lists (see `git::marks`).
+    let changed_lines = &tab.cache.git_marks;
 
     let text_edit_output = RefCell::new(None::<TextEditOutput>);
     // (links, styled) from the latest layouter run, which is the exact galley.
@@ -197,6 +199,7 @@ pub fn show_editor(
                     &editor_id,
                     &color_theme,
                     diag_rows,
+                    changed_lines,
                     palette,
                 );
                 for row in clicked {
@@ -455,7 +458,10 @@ pub fn show_editor(
         .id_salt(format!("{editor_id}_outer_scroll"))
         .show(ui, code_editor);
 
-    let view = updated_fold_view.into_inner().unwrap_or(view0);
+    let view: std::sync::Arc<folds::FoldView> = match updated_fold_view.into_inner() {
+        Some(edited) => std::sync::Arc::new(edited),
+        None => view0,
+    };
     let Some(mut output) = text_edit_output.into_inner() else {
         eprintln!("editor: skipped frame; no TextEdit output available");
         return;

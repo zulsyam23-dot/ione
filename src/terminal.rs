@@ -12,7 +12,14 @@ use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySyste
 use crate::style::Palette;
 
 const FONT_SIZE: f32 = 14.0;
-const BG: Color32 = Color32::from_rgb(12, 12, 12);
+/// Inset between the panel border and the character grid, so the prompt never
+/// sits glued to the edge and cell rects never straddle the border.
+const GRID_PAD: f32 = 6.0;
+/// Left inset of the session tab strip, aligning tabs with the panel header.
+const TAB_INSET: f32 = 6.0;
+/// Text drawn on the accent-filled cursor block; the accent is light in both
+/// themes, so this stays dark rather than following the canvas.
+const CURSOR_TEXT: Color32 = Color32::from_rgb(12, 12, 12);
 
 struct TerminalInstance {
     master: Option<Box<dyn MasterPty + Send>>,
@@ -254,9 +261,9 @@ impl TerminalPanel {
 
         // Tab strip for the multi-terminal sessions.
         let mut close: Option<usize> = None;
-        ui.add_space(4.0);
+        ui.add_space(3.0);
         ui.horizontal(|ui| {
-            ui.add_space(6.0);
+            ui.add_space(TAB_INSET);
             for i in 0..self.sessions.len() {
                 let is_active = i == self.active;
                 let label = format!("Terminal {}", i + 1);
@@ -265,18 +272,23 @@ impl TerminalPanel {
                 } else {
                     palette.text_muted
                 };
-                let fill = if is_active {
-                    palette.panel_active
-                } else {
-                    egui::Color32::TRANSPARENT
-                };
-                let tab_frame = egui::Frame::NONE.fill(fill).corner_radius(0.0);
-                let response = tab_frame
-                    .show(ui, |ui| {
-                        ui.add(egui::Button::new(RichText::new(&label).color(color)))
-                    })
-                    .inner
+                // Flat tab, matching the app-wide sharp corners: no fill block, just the
+                // label (bright + bold when active) and the accent underline.
+                let mut text = RichText::new(&label).color(color);
+                if is_active {
+                    text = text.strong();
+                }
+                let response = ui
+                    .add(egui::Button::new(text))
                     .on_hover_text("Switch terminal");
+                if is_active {
+                    let tab = response.rect;
+                    ui.painter().hline(
+                        tab.x_range(),
+                        tab.max.y - 1.0,
+                        Stroke::new(1.5, palette.accent),
+                    );
+                }
                 if response.clicked() {
                     self.active = i;
                     self.spawn(ctx);
@@ -292,11 +304,22 @@ impl TerminalPanel {
                 });
                 ui.add_space(2.0);
             }
-            if ui.small_button("+").on_hover_text("New terminal").clicked() {
-                self.add_session(ctx);
-            }
+            // New-session button hugs the right edge, where the eye expects
+            // "add" affordances, instead of trailing the last tab.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_space(TAB_INSET);
+                if ui.small_button("+").on_hover_text("New terminal").clicked() {
+                    self.add_session(ctx);
+                }
+            });
         });
-        ui.add_space(2.0);
+        ui.add_space(3.0);
+
+        // Hairline separating the strip from the canvas, drawn instead of
+        // `ui.separator()` so it spans the panel width at exactly one pixel.
+        let (rule, _) =
+            ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), Sense::hover());
+        ui.painter().rect_filled(rule, 0.0, palette.border);
 
         if let Some(i) = close {
             if self.sessions.len() > 1 {
@@ -324,7 +347,13 @@ impl TerminalPanel {
         // Reserve the full available space so we own a real, non-empty rect.
         let avail = ui.available_size();
         let avail = avail.max(egui::vec2(glyph_w * 10.0, row_h * 3.0));
-        let (rect, response) = ui.allocate_exact_size(avail, Sense::click());
+        let (area, response) = ui.allocate_exact_size(avail, Sense::click());
+
+        // Canvas fills the whole area edge to edge; the grid then draws inside a
+        // padded rect so cells never overlap the panel border.
+        ui.painter_at(area)
+            .rect_filled(area, 0.0, palette.terminal_bg);
+        let rect = area.shrink(GRID_PAD);
 
         // Also claim keyboard input when clicked/focused.
         if response.clicked() {
@@ -377,17 +406,29 @@ impl TerminalPanel {
         );
         let mouse_mode = screen.mouse_protocol_mode();
 
-        // Background.
+        // Grid painter, clipped to the padded content rect.
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, BG);
 
+        // Idle/error states read as panel UI rather than terminal output.
         if let Some(err) = &s.error {
-            painter.text(
-                rect.min + egui::vec2(8.0, 8.0),
-                Align2::LEFT_TOP,
-                err,
-                FontId::proportional(FONT_SIZE),
-                palette.text,
+            paint_note(
+                &painter,
+                rect,
+                &format!(
+                    "{err}\n\nThe shell could not be started. Check that pwsh or powershell is on PATH, then open the terminal again."
+                ),
+                FONT_SIZE,
+                palette.diag_error,
+            );
+            return;
+        }
+        if !s.spawned {
+            paint_note(
+                &painter,
+                rect,
+                "Starting shell…",
+                FONT_SIZE,
+                palette.text_muted,
             );
             return;
         }
@@ -425,7 +466,8 @@ impl TerminalPanel {
                     None => continue,
                 };
 
-                // Background fill (respect cell bg except where it equals BG).
+                // Background fill (respect cell bg except where it equals the
+                // canvas, which the full-area fill already painted).
                 let bg = if is_cursor {
                     palette.accent
                 } else if selected {
@@ -433,14 +475,14 @@ impl TerminalPanel {
                 } else {
                     vt100_color_to_egui(cell.bgcolor(), palette, true)
                 };
-                if bg != BG {
+                if bg != palette.terminal_bg {
                     painter.rect_filled(cell_rect, 0.0, bg);
                 }
 
                 let contents = cell.contents();
                 if !contents.is_empty() && contents != " " {
                     let fg = if is_cursor {
-                        Color32::from_rgb(12, 12, 12)
+                        CURSOR_TEXT
                     } else if selected {
                         vt100_color_to_egui(cell.bgcolor(), palette, true)
                     } else {
@@ -467,6 +509,24 @@ impl TerminalPanel {
                 0.0,
                 Stroke::new(1.5, palette.accent),
                 StrokeKind::Inside,
+            );
+        }
+
+        // Scrollback badge: without it, viewing history looks identical to a
+        // live prompt sitting idle.
+        if scrolled {
+            let lines = s.scroll_offset;
+            let label = format!(
+                "scrolled back {lines} line{}",
+                if lines == 1 { "" } else { "s" }
+            );
+            paint_badge(
+                &painter,
+                Pos2::new(rect.max.x - 8.0, rect.min.y + 8.0),
+                &label,
+                10.5,
+                palette.text,
+                palette.panel_active,
             );
         }
 
@@ -714,11 +774,107 @@ fn in_selection(sel: (Option<(u16, u16)>, Option<(u16, u16)>), row: u16, col: u1
     row >= r1 && row <= r2 && col >= c1 && col <= c2
 }
 
+/// A centred, word-wrapped note inside `rect`. Used for the "no shell yet" and
+/// spawn-failure states so they read as panel UI rather than shell output.
+fn paint_note(painter: &egui::Painter, rect: Rect, text: &str, size: f32, color: Color32) {
+    let font = FontId::proportional(size);
+    let lines = wrap_text(text, wrap_cols(rect.width(), size));
+    let line_h = size * 1.35;
+    let widest = lines
+        .iter()
+        .map(|l| text_width(l, size))
+        .fold(0.0_f32, f32::max);
+    let block = Rect::from_min_size(
+        Pos2::new(
+            rect.center().x - widest / 2.0,
+            rect.center().y - lines.len() as f32 * line_h / 2.0,
+        ),
+        egui::vec2(widest, lines.len() as f32 * line_h),
+    );
+    for (i, line) in lines.iter().enumerate() {
+        painter.text(
+            Pos2::new(block.min.x, block.min.y + i as f32 * line_h + line_h / 2.0),
+            Align2::LEFT_CENTER,
+            line,
+            font.clone(),
+            color,
+        );
+    }
+}
+
+/// A rounded chip pinned inside the canvas with its top-right corner at
+/// `top_right` — the scrollback badge. The label is centred in the chip so the
+/// approximated width stays balanced.
+fn paint_badge(
+    painter: &egui::Painter,
+    top_right: Pos2,
+    text: &str,
+    size: f32,
+    fg: Color32,
+    backdrop: Color32,
+) {
+    let h = size * 2.0;
+    let chip = Rect::from_min_size(
+        Pos2::new(top_right.x - text_width(text, size) - 16.0, top_right.y),
+        egui::vec2(text_width(text, size) + 16.0, h),
+    );
+    painter.rect_filled(chip, h / 2.0, backdrop);
+    painter.text(
+        chip.center(),
+        Align2::CENTER_CENTER,
+        text,
+        FontId::proportional(size),
+        fg,
+    );
+}
+
+/// Approximate advance width of UI text: the proportional font averages
+/// roughly 0.55em per character.
+fn text_width(text: &str, size: f32) -> f32 {
+    text.chars().count() as f32 * size * 0.55
+}
+
+/// Characters that fit across `width` at `size`, leaving a 2-character margin.
+fn wrap_cols(width: f32, size: f32) -> usize {
+    ((width / (size * 0.55)) - 2.0).floor().max(12.0) as usize
+}
+
+/// Greedy word wrap on spaces; long words are left intact rather than cut.
+fn wrap_text(text: &str, cols: usize) -> Vec<String> {
+    let cols = cols.max(1);
+    let mut out = Vec::new();
+    for para in text.split('\n') {
+        if para.trim().is_empty() {
+            out.push(String::new());
+            continue;
+        }
+        let mut line = String::new();
+        for word in para.split(' ') {
+            let w = word.chars().count();
+            let cur = line.chars().count();
+            if cur > 0 && cur + 1 + w > cols {
+                out.push(std::mem::take(&mut line));
+            }
+            if !line.is_empty() {
+                line.push(' ');
+            }
+            line.push_str(word);
+        }
+        if !line.is_empty() {
+            out.push(line);
+        }
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
+}
+
 fn vt100_color_to_egui(color: vt100::Color, palette: &Palette, is_bg: bool) -> Color32 {
     match color {
         vt100::Color::Default => {
             if is_bg {
-                Color32::from_rgb(12, 12, 12)
+                palette.terminal_bg
             } else {
                 palette.text
             }
@@ -753,6 +909,33 @@ fn ansi_idx_to_color(idx: u8) -> Color32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wrap_text_breaks_on_spaces_and_keeps_paragraphs() {
+        let lines = wrap_text("the shell could not be started", 10);
+        assert!(lines.iter().all(|l| l.chars().count() <= 10), "{lines:?}");
+        // The break eats the space it replaced, so it comes back on rejoin.
+        assert_eq!(lines.join(" "), "the shell could not be started");
+
+        // Blank lines in the input become blank lines in the output, so a
+        // message can carry its own two-part layout.
+        let para = wrap_text("first\n\nsecond", 40);
+        assert_eq!(para, vec!["first", "", "second"]);
+
+        // A word longer than the column is kept whole instead of being cut.
+        let long = wrap_text("supercalifragilistic", 5);
+        assert_eq!(long, vec!["supercalifragilistic"]);
+
+        assert_eq!(wrap_text("", 20), vec![""]);
+    }
+
+    #[test]
+    fn wrap_cols_leaves_a_margin_and_never_returns_zero() {
+        assert!(wrap_cols(400.0, 14.0) > 40);
+        // Narrow panels still get a usable column count.
+        assert!(wrap_cols(10.0, 14.0) >= 12);
+        assert_eq!(text_width("abc", 10.0), 3.0 * 10.0 * 0.55);
+    }
 
     #[test]
     fn cell_mapping_clamps_to_grid() {

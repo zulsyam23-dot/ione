@@ -233,11 +233,25 @@ pub fn draw_squiggles(
 }
 
 /// Cheap content hash; a changed hash is the trigger for `analyze`.
+///
+/// Runs on every frame of every open tab, so it eats eight bytes at a time
+/// instead of one: a byte-at-a-time FNV loop over a multi-megabyte buffer
+/// costs milliseconds per frame, which alone caps a large file well below
+/// 60 fps. Only equality matters here (never a stable id), so the mixing just
+/// has to touch every byte and avalanche.
 pub fn hash_content(content: &str) -> u64 {
-    let mut h = 0xcbf2_9ce4_8422_2325u64;
-    for &b in content.as_bytes() {
+    const PRIME: u64 = 0x100_0000_01b3;
+    let mut h = 0xcbf2_9ce4_8422_2325u64 ^ (content.len() as u64);
+    let bytes = content.as_bytes();
+    let (words, tail) = bytes.as_chunks::<8>();
+    for word in words {
+        // xor-fold the halves so both endian orders mix, then avalanche.
+        h = (h ^ u64::from_le_bytes(*word)).wrapping_mul(PRIME);
+        h ^= h >> 29;
+    }
+    for &b in tail {
         h ^= b as u64;
-        h = h.wrapping_mul(0x100_0000_01b3);
+        h = h.wrapping_mul(PRIME);
     }
     h
 }

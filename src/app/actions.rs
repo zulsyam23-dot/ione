@@ -410,11 +410,40 @@ impl EditorApp {
         }
     }
 
+    /// Open a file: hand it to a worker thread and put the loading GIF up while
+    /// it is read and analyzed, so every open shows the splash instead of the
+    /// window silently freezing. The tab is created by `pump_loader` when the
+    /// result arrives.
     pub(super) fn open_path(&mut self, path: PathBuf) {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            let syntax = TabManager::detect_syntax(&path);
-            self.tabs.open_file(path.clone(), content, syntax);
-            crate::settings::push_recent(&mut self.recent_files, path);
+        // Already open: focus that tab, don't re-read the file.
+        if let Some(i) = self.tabs.index_of(&path) {
+            self.tabs.set_active(i);
+            return;
+        }
+        let bytes = crate::loader::file_size(&path);
+        if self.loader.request(path, bytes) {
+            self.arm_open_splash();
+        }
+    }
+
+    /// Show the editor-area splash for whatever load is in flight, labelled with
+    /// the file being read. A later request for another file just re-labels the
+    /// overlay that is already up instead of stacking a second one.
+    pub(super) fn arm_open_splash(&mut self) {
+        let Some(p) = self.loader.pending.as_ref() else {
+            return;
+        };
+        let caption = (
+            crate::loader::display_name(&p.path),
+            format!("{} — sedang dibaca…", crate::loader::human_size(p.bytes)),
+        );
+        match &mut self.loading {
+            Some((ov, _)) if !ov.fullscreen => ov.caption = Some(caption),
+            _ => {
+                if let Some(ov) = crate::loading::LoadingOverlay::editor_area(caption) {
+                    self.loading = Some((ov, Instant::now()));
+                }
+            }
         }
     }
 
