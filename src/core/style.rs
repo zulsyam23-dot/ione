@@ -39,8 +39,8 @@ impl Palette {
             text_muted: Color32::from_rgb(140, 140, 145),
             terminal_bg: Color32::from_rgb(12, 12, 12),
             editor_bg: "000000",
-            bracket_guide: Color32::from_rgba_unmultiplied(160, 165, 185, 70),
-            bracket_active: Color32::from_rgba_unmultiplied(90, 160, 255, 200),
+            bracket_guide: Color32::from_rgba_unmultiplied(160, 165, 185, 36),
+            bracket_active: Color32::from_rgba_unmultiplied(90, 160, 255, 150),
             bracket_rainbow: [
                 Color32::from_rgb(200, 160, 255),
                 Color32::from_rgb(90, 200, 240),
@@ -65,8 +65,8 @@ impl Palette {
             text_muted: Color32::from_rgb(112, 115, 124),
             terminal_bg: Color32::from_rgb(255, 255, 255),
             editor_bg: "ffffff",
-            bracket_guide: Color32::from_rgba_unmultiplied(70, 75, 95, 80),
-            bracket_active: Color32::from_rgba_unmultiplied(56, 120, 255, 205),
+            bracket_guide: Color32::from_rgba_unmultiplied(70, 75, 95, 55),
+            bracket_active: Color32::from_rgba_unmultiplied(56, 120, 255, 150),
             bracket_rainbow: [
                 Color32::from_rgb(120, 70, 205),
                 Color32::from_rgb(30, 120, 190),

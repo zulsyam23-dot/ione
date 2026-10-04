@@ -29,27 +29,31 @@ enum DiffKind {
     Add,
     /// Removed line (`-`).
     Del,
-    /// File-header `--- a/…` / `+++ b/…`, rendered faint.
+    /// File header `--- a/...` / `+++ b/...`, rendered faint.
     Meta,
     /// `\ No newline at end of file` companion.
     NoNewline,
-    /// Noise (diff --git, index, mode lines…) — hidden entirely.
+    /// Noise lines (diff --git, index, mode, rename, binary) — hidden.
     Skip,
 }
 
+/// Line prefixes that carry no content worth showing.
+const SKIP_PREFIXES: &[&str] = &[
+    "diff --git",
+    "index ",
+    "old mode",
+    "new mode",
+    "new file mode",
+    "deleted file mode",
+    "similarity index",
+    "rename from",
+    "rename to",
+    "Binary files",
+];
+
 /// Classify a single line of unified diff output.
 fn classify_diff_line(line: &str) -> DiffKind {
-    if line.starts_with("diff --git")
-        || line.starts_with("index ")
-        || line.starts_with("old mode")
-        || line.starts_with("new mode")
-        || line.starts_with("new file mode")
-        || line.starts_with("deleted file mode")
-        || line.starts_with("similarity index")
-        || line.starts_with("rename from")
-        || line.starts_with("rename to")
-        || line.starts_with("Binary files")
-    {
+    if SKIP_PREFIXES.iter().any(|p| line.starts_with(p)) {
         DiffKind::Skip
     } else if line.starts_with("---") || line.starts_with("+++") {
         DiffKind::Meta
@@ -66,7 +70,7 @@ fn classify_diff_line(line: &str) -> DiffKind {
     }
 }
 
-/// Added/removed line counts for a diff (excluding the `+++ b/…` header).
+/// Added/removed line counts for a diff (excluding the `+++ b/...` header).
 fn diff_counts(text: &str) -> (usize, usize) {
     let mut added = 0;
     let mut removed = 0;
@@ -86,9 +90,25 @@ fn strip_diff_sign(line: &str) -> &str {
     line.strip_prefix(['+', '-', ' ']).unwrap_or(line)
 }
 
+struct DiffRowStyle {
+    fill: egui::Color32,
+    text: egui::Color32,
+    sign: &'static str,
+}
+
 /// Fill/text/sign styling for one diff row, tuned for the active theme.
 fn diff_row_style(palette: &Palette, kind: DiffKind) -> DiffRowStyle {
     let dark = palette.text.r() > 128;
+    let added = if dark {
+        egui::Color32::from_rgb(115, 200, 120)
+    } else {
+        egui::Color32::from_rgb(26, 127, 55)
+    };
+    let removed = if dark {
+        egui::Color32::from_rgb(230, 92, 92)
+    } else {
+        egui::Color32::from_rgb(179, 49, 49)
+    };
     match kind {
         DiffKind::Add => DiffRowStyle {
             fill: if dark {
@@ -96,11 +116,7 @@ fn diff_row_style(palette: &Palette, kind: DiffKind) -> DiffRowStyle {
             } else {
                 egui::Color32::from_rgba_unmultiplied(26, 127, 55, 28)
             },
-            text: if dark {
-                egui::Color32::from_rgb(115, 200, 120)
-            } else {
-                egui::Color32::from_rgb(26, 127, 55)
-            },
+            text: added,
             sign: "+",
         },
         DiffKind::Del => DiffRowStyle {
@@ -109,11 +125,7 @@ fn diff_row_style(palette: &Palette, kind: DiffKind) -> DiffRowStyle {
             } else {
                 egui::Color32::from_rgba_unmultiplied(179, 49, 49, 26)
             },
-            text: if dark {
-                egui::Color32::from_rgb(230, 92, 92)
-            } else {
-                egui::Color32::from_rgb(179, 49, 49)
-            },
+            text: removed,
             sign: "-",
         },
         DiffKind::Hunk => DiffRowStyle {
@@ -126,28 +138,49 @@ fn diff_row_style(palette: &Palette, kind: DiffKind) -> DiffRowStyle {
             text: palette.accent,
             sign: "",
         },
-        DiffKind::Context => DiffRowStyle {
+        DiffKind::Context | DiffKind::Meta | DiffKind::NoNewline | DiffKind::Skip => DiffRowStyle {
             fill: egui::Color32::TRANSPARENT,
             text: palette.text_muted,
-            sign: "",
-        },
-        DiffKind::Meta | DiffKind::NoNewline => DiffRowStyle {
-            fill: egui::Color32::TRANSPARENT,
-            text: palette.text_muted,
-            sign: "",
-        },
-        DiffKind::Skip => DiffRowStyle {
-            fill: egui::Color32::TRANSPARENT,
-            text: egui::Color32::TRANSPARENT,
             sign: "",
         },
     }
 }
 
-struct DiffRowStyle {
-    fill: egui::Color32,
-    text: egui::Color32,
-    sign: &'static str,
+/// Horizontal room kept between the sign column and the code text.
+const SIGN_COL_W: f32 = 14.0;
+
+fn paint_diff_row(
+    ui: &mut egui::Ui,
+    line: &str,
+    style: &DiffRowStyle,
+    font: &egui::FontId,
+    row_h: f32,
+) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width().max(0.0), row_h),
+        egui::Sense::hover(),
+    );
+    if style.fill != egui::Color32::TRANSPARENT {
+        ui.painter().rect_filled(rect, 0.0, style.fill);
+    }
+    let y = rect.center().y;
+    let x = rect.min.x + 8.0;
+    if !style.sign.is_empty() {
+        ui.painter().text(
+            egui::pos2(x, y),
+            egui::Align2::LEFT_CENTER,
+            style.sign,
+            font.clone(),
+            style.text,
+        );
+    }
+    ui.painter().text(
+        egui::pos2(x + SIGN_COL_W, y),
+        egui::Align2::LEFT_CENTER,
+        strip_diff_sign(line),
+        font.clone(),
+        style.text,
+    );
 }
 
 impl GitPanel {
@@ -186,7 +219,7 @@ impl GitPanel {
                 .monospace()
                 .size(11.5)
                 .color(palette.text);
-            // Room for "+n −n" plus the Open File button, so the path truncates
+            // Room for "+n -n" plus the Open File button, so the path truncates
             // instead of running under them.
             super::ui::flex_label(ui, label, 130.0, egui::Sense::hover());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -209,7 +242,7 @@ impl GitPanel {
                     }
                     if removed > 0 {
                         ui.label(
-                            RichText::new(format!("−{removed}"))
+                            RichText::new(format!("-{removed}"))
                                 .monospace()
                                 .size(11.5)
                                 .color(self.kind_color(palette, ChangeKind::Deleted)),
@@ -228,60 +261,37 @@ impl GitPanel {
                         .color(palette.text_muted),
                 );
             });
-        } else {
-            let font = egui::FontId::monospace(12.0);
-            // The scrollbar belongs at the bottom of the pane, not right under
-            // the last diff line, so the scrolled area is at least as tall as
-            // the pane: a two-line diff still gets its bar docked. The bar's
-            // own height is subtracted so it fits instead of hanging past the
-            // pane's bottom edge.
-            let bar_h = ui.spacing().scroll.allocated_width();
-            let viewport_h = (ui.available_height() - bar_h).max(40.0);
-            egui::ScrollArea::both()
-                .id_salt("git_diff_scroll")
-                .auto_shrink([false, false])
-                .min_scrolled_height(viewport_h)
-                .show(ui, |ui| {
-                    ui.add_space(2.0);
-                    let row_h = ui.fonts_mut(|f| f.row_height(&font)) + 2.0;
-                    let char_w = ui.fonts_mut(|f| f.glyph_width(&font, 'm'));
-                    let max_len = text.lines().map(str::len).max().unwrap_or(0);
-                    ui.set_min_width((max_len as f32 * char_w).max(ui.available_width()));
-
-                    for line in text.lines() {
-                        let kind = classify_diff_line(line);
-                        let style = diff_row_style(palette, kind);
-                        if kind == DiffKind::Skip {
-                            continue;
-                        }
-                        let (rect, _) = ui.allocate_exact_size(
-                            egui::vec2(ui.available_width().max(0.0), row_h),
-                            egui::Sense::hover(),
-                        );
-                        if style.fill != egui::Color32::TRANSPARENT {
-                            ui.painter().rect_filled(rect, 0.0, style.fill);
-                        }
-                        let y = rect.center().y;
-                        let x = rect.min.x + 8.0;
-                        if !style.sign.is_empty() {
-                            ui.painter().text(
-                                egui::pos2(x, y),
-                                egui::Align2::LEFT_CENTER,
-                                style.sign,
-                                font.clone(),
-                                style.text,
-                            );
-                        }
-                        ui.painter().text(
-                            egui::pos2(x + 14.0, y),
-                            egui::Align2::LEFT_CENTER,
-                            strip_diff_sign(line),
-                            font.clone(),
-                            style.text,
-                        );
-                    }
-                });
+            return;
         }
+
+        let font = egui::FontId::monospace(12.0);
+        // The scrollbar belongs at the bottom of the pane, not right under
+        // the last diff line, so the scrolled area is at least as tall as
+        // the pane: a two-line diff still gets its bar docked. The bar's
+        // own height is subtracted so it fits instead of hanging past the
+        // pane's bottom edge.
+        let bar_h = ui.spacing().scroll.allocated_width();
+        let viewport_h = (ui.available_height() - bar_h).max(40.0);
+        egui::ScrollArea::both()
+            .id_salt("git_diff_scroll")
+            .auto_shrink([false, false])
+            .min_scrolled_height(viewport_h)
+            .show(ui, |ui| {
+                ui.add_space(2.0);
+                let row_h = ui.fonts_mut(|f| f.row_height(&font)) + 2.0;
+                let char_w = ui.fonts_mut(|f| f.glyph_width(&font, 'm'));
+                let max_len = text.lines().map(str::len).max().unwrap_or(0);
+                ui.set_min_width((max_len as f32 * char_w).max(ui.available_width()));
+
+                for line in text.lines() {
+                    let kind = classify_diff_line(line);
+                    if kind == DiffKind::Skip {
+                        continue;
+                    }
+                    let style = diff_row_style(palette, kind);
+                    paint_diff_row(ui, line, &style, &font, row_h);
+                }
+            });
     }
 }
 
@@ -303,7 +313,7 @@ index 123abc..456def 100644
  }
 \\ No newline at end of file
 ";
-        let mut kinds: Vec<DiffKind> = diff.lines().map(classify_diff_line).collect();
+        let kinds: Vec<DiffKind> = diff.lines().map(classify_diff_line).collect();
         assert_eq!(kinds[0], DiffKind::Skip);
         assert_eq!(kinds[1], DiffKind::Skip);
         assert_eq!(kinds[2], DiffKind::Meta);

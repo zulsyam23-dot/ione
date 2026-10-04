@@ -279,9 +279,9 @@ pub fn draw_editor_overlays_with_pairs(
         let width_for = |p: &Pair| {
             let depth = scan.depths.get(p.open).copied().unwrap_or(0);
             if depth == 0 {
-                font_size * 0.18
+                font_size * 0.14
             } else {
-                font_size * 0.10
+                font_size * 0.08
             }
         };
         let color = palette.bracket_guide;
