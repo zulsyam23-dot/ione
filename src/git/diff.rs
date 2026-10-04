@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use eframe::egui::{self, RichText};
 
 use crate::app::AppCommand;
-use crate::style::Palette;
+use crate::core::style::Palette;
 
 use super::{ChangeKind, GitPanel, change::kind_letter};
 

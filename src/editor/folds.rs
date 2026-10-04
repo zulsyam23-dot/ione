@@ -15,16 +15,16 @@ use eframe::egui;
 use egui::TextBuffer;
 use egui::text::CharIndex;
 
-use crate::guides::brackets::BracePair;
-use crate::icons::{Icon, Icons};
-use crate::tabs::Fold;
+use crate::editor::guides::brackets::BracePair;
+use crate::core::icons::{Icon, Icons};
+use crate::workspace::tabs::Fold;
 
 const MARKER: &str = "â‹¯";
 
 /// Cheap fingerprint of a fold set, changed whenever any fold moves — the
 /// `(content hash, fold fingerprint)` key of the fold-view memo. A stable
 /// mix, order-sensitive: comparing it to itself across frames is all it does.
-pub(crate) fn fold_fp(folds: &[Fold]) -> u64 {
+pub fn fold_fp(folds: &[Fold]) -> u64 {
     let mut h = 0xcbf2_9ce4_8422_2325u64;
     for f in folds {
         h ^= (f.open as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
@@ -41,50 +41,50 @@ pub(crate) fn fold_fp(folds: &[Fold]) -> u64 {
 
 /// One displayed row.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Row {
+pub struct Row {
     /// Real 0-based line number this row shows.
-    pub(crate) line: usize,
+    pub line: usize,
     /// Char index where this row starts in the display text.
-    pub(crate) char_start: usize,
+    pub char_start: usize,
     /// Display char index of the inline `â‹¯` marker at the end of this row.
-    pub(crate) marker_char: Option<usize>,
+    pub marker_char: Option<usize>,
     /// Open-brace char index of the fold this row's `â‹¯` marker stands for.
-    pub(crate) marker: Option<usize>,
+    pub marker: Option<usize>,
 }
 
 /// Immutable description of how `content` looks with `folds` applied.
 #[derive(Clone, Debug)]
-pub(crate) struct FoldView {
-    pub(crate) display: String,
+pub struct FoldView {
+    pub display: String,
     /// display char index -> real char index (len = display chars + 1).
-    pub(crate) d2r: Vec<usize>,
+    pub d2r: Vec<usize>,
     /// Rows in display order.
-    pub(crate) rows: Vec<Row>,
+    pub rows: Vec<Row>,
     /// real line number -> display row (usize::MAX when hidden).
-    pub(crate) real_row: Vec<usize>,
+    pub real_row: Vec<usize>,
     /// Real source char index of each line start, cached with the view.
-    pub(crate) real_line_starts: Vec<usize>,
+    pub real_line_starts: Vec<usize>,
 }
 
 /// The display chars of one inline `â‹¯` marker (appended to its opening line).
-pub(crate) const MARKER_CHARS: usize = 1;
+pub const MARKER_CHARS: usize = 1;
 
 impl FoldView {
     /// Real char index of the first displayed char of `real_line`; `None` when
     /// that line is hidden by a fold.
-    pub(crate) fn char_of_real_line(&self, real_line: usize) -> Option<usize> {
+    pub fn char_of_real_line(&self, real_line: usize) -> Option<usize> {
         let row = *self.real_row.get(real_line)?;
         (row != usize::MAX).then(|| self.rows[row].char_start)
     }
 
     /// Display row of a real line, if visible.
-    pub(crate) fn display_row_of(&self, real_line: usize) -> Option<usize> {
+    pub fn display_row_of(&self, real_line: usize) -> Option<usize> {
         let row = *self.real_row.get(real_line)?;
         (row != usize::MAX).then_some(row)
     }
 }
 
-pub(crate) fn build_fold_view(content: &str, folds: &[Fold]) -> FoldView {
+pub fn build_fold_view(content: &str, folds: &[Fold]) -> FoldView {
     let chars: Vec<char> = content.chars().collect();
     let mut line_starts = vec![0usize];
     for (i, &c) in chars.iter().enumerate() {
@@ -183,7 +183,7 @@ pub(crate) fn build_fold_view(content: &str, folds: &[Fold]) -> FoldView {
 
 /// Toggle the fold whose block starts on `real_line`: closes it when open,
 /// opens it when already closed. Nested innermost block wins.
-pub(crate) fn toggle_fold(
+pub fn toggle_fold(
     folds: &mut Vec<Fold>,
     brace_opens: &[usize],
     content: &str,
@@ -213,7 +213,7 @@ pub(crate) fn toggle_fold(
 
 /// Unfold every fold containing `real_line` in its hidden interior (used by
 /// jump-to-line when the target line is hidden).
-pub(crate) fn unfold_covering(folds: &mut Vec<Fold>, content: &str, real_line: usize) {
+pub fn unfold_covering(folds: &mut Vec<Fold>, content: &str, real_line: usize) {
     let line_of_char = |ci: usize| -> usize {
         let starts = line_starts_of(content);
         starts.partition_point(|&s| s <= ci).saturating_sub(1)
@@ -226,7 +226,7 @@ pub(crate) fn unfold_covering(folds: &mut Vec<Fold>, content: &str, real_line: u
 
 /// Display rows that carry a fold toggle: the opening line of every closed
 /// fold plus every visible line where a multi-line brace block starts.
-pub(crate) fn fold_rows(view: &FoldView, folds: &[Fold], brace_opens: &[usize]) -> Vec<usize> {
+pub fn fold_rows(view: &FoldView, folds: &[Fold], brace_opens: &[usize]) -> Vec<usize> {
     let line_of_char = |ci: usize| {
         view.real_line_starts
             .partition_point(|&s| s <= ci)
@@ -250,7 +250,7 @@ pub(crate) fn fold_rows(view: &FoldView, folds: &[Fold], brace_opens: &[usize]) 
 // FoldBuffer: the TextBuffer that TextEdit sees.
 // ---------------------------------------------------------------------------
 
-pub(crate) struct FoldBuffer<'a> {
+pub struct FoldBuffer<'a> {
     content: &'a mut String,
     folds: &'a mut Vec<Fold>,
     view: &'a FoldView,
@@ -261,7 +261,7 @@ impl<'a> FoldBuffer<'a> {
     /// Like [`FoldBuffer`] but takes the display view the editor already
     /// computed this frame (from its `FoldView` memo), so the file is not
     /// re-processed twice.
-    pub(crate) fn with_view(
+    pub fn with_view(
         content: &'a mut String,
         folds: &'a mut Vec<Fold>,
         view: &'a FoldView,
@@ -274,15 +274,15 @@ impl<'a> FoldBuffer<'a> {
         }
     }
 
-    pub(crate) fn view(&self) -> &FoldView {
+    pub fn view(&self) -> &FoldView {
         self.updated_view.as_ref().unwrap_or(self.view)
     }
 
-    pub(crate) fn content(&self) -> &str {
+    pub fn content(&self) -> &str {
         self.content
     }
 
-    pub(crate) fn take_updated_view(&mut self) -> Option<FoldView> {
+    pub fn take_updated_view(&mut self) -> Option<FoldView> {
         self.updated_view.take()
     }
 
@@ -384,7 +384,7 @@ struct FoldBufferTag;
 
 const ICON_PX: f32 = 16.0;
 
-pub(crate) fn draw_fold_icons(
+pub fn draw_fold_icons(
     ui: &egui::Ui,
     icons: &mut Icons,
     rows: &[usize],
@@ -427,7 +427,7 @@ pub(crate) fn draw_fold_icons(
 // Small shared helpers.
 // ---------------------------------------------------------------------------
 
-pub(crate) fn line_starts_of(content: &str) -> Vec<usize> {
+pub fn line_starts_of(content: &str) -> Vec<usize> {
     let mut starts = vec![0usize];
     for (i, c) in content.chars().enumerate() {
         if c == '\n' {
@@ -447,7 +447,7 @@ pub(crate) fn line_starts_of(content: &str) -> Vec<usize> {
 ///   (bare `}`, `} else {`, `} while …`). A `;`,`,`/`)`/`]` after the `}` means
 ///   a multi-line *literal* is closing (`Foo {\n …\n};`, `vec!{…},`), which
 ///   must not fold.
-pub(crate) fn foldable_opens(content: &str, braces: &[BracePair]) -> Vec<usize> {
+pub fn foldable_opens(content: &str, braces: &[BracePair]) -> Vec<usize> {
     let chars: Vec<char> = content.chars().collect();
     let mut out = Vec::new();
     for b in braces {
@@ -503,11 +503,11 @@ fn closest_close(content: &str, open: usize) -> Option<usize> {
 /// Drop bracket pairs that are unmatched in the *display* scan only because a
 /// fold hides their closing bracket (their real match exists). Without this a
 /// folded block's open `{` would light up a guide straight down the file.
-pub(crate) fn suppress_folded_pairs(
-    scan: &crate::guides::BracketScan,
-    real_scan: &crate::guides::BracketScan,
+pub fn suppress_folded_pairs(
+    scan: &crate::editor::guides::BracketScan,
+    real_scan: &crate::editor::guides::BracketScan,
     view: &FoldView,
-) -> Vec<crate::guides::Pair> {
+) -> Vec<crate::editor::guides::Pair> {
     let matched: std::collections::HashSet<usize> = real_scan
         .pairs
         .iter()
@@ -559,7 +559,7 @@ mod tests {
     fn foldable_opens_shape_filter() {
         let content = "fn a() {\n    x();\n}\nlet m = Foo {\n    a: 1,\n};\nlet z = Bar { a: 1 };\nif x {\n    y();\n} else {\n    z();\n}\n";
         let chars: Vec<char> = content.chars().collect();
-        let braces = crate::guides::analyze_brackets(&chars, &vec![false; chars.len()]).brace_pairs;
+        let braces = crate::editor::guides::analyze_brackets(&chars, &vec![false; chars.len()]).brace_pairs;
         // The two expression literals (`Foo {\n …\n};`, `Bar { a: 1 };`) must
         // be filtered out; the fn body and the if/else blocks must survive.
         let mut literal_opens: Vec<usize> = braces

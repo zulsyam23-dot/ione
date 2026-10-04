@@ -1,7 +1,7 @@
 use eframe::egui::{self, Align, Align2, Layout};
 
-use crate::icons::Icon;
-use crate::style::header_label;
+use crate::core::icons::Icon;
+use crate::core::style::header_label;
 
 use super::AppCommand;
 use super::EditorApp;

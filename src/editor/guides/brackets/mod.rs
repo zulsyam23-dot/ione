@@ -5,37 +5,37 @@
 //! - `scanner`: the mask-aware scan producing a [`BracketScan`].
 //! - `active`: the cursor's innermost enclosing pair.
 
-pub(crate) mod active;
-pub(crate) mod scanner;
+pub mod active;
+pub mod scanner;
 
-pub(crate) use scanner::analyze_brackets;
+pub use scanner::analyze_brackets;
 
 /// An opening–closing bracket pair. Unmatched opens are returned with
 /// `close == usize::MAX`.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Pair {
-    pub(crate) open: usize,
-    pub(crate) close: usize,
+pub struct Pair {
+    pub open: usize,
+    pub close: usize,
 }
 
 /// A `{}` brace pair, used to drive folding targets. Unmatched opens have
 /// `close == usize::MAX`.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct BracePair {
-    pub(crate) open: usize,
-    pub(crate) close: usize,
+pub struct BracePair {
+    pub open: usize,
+    pub close: usize,
 }
 
 /// First-class result of a bracket scan: per-char nesting depth (used for
 /// rainbow coloring), the sorted pair inventory (used for guides), the `{}`
 /// pairs (used for folding), and stray closing brackets (used for diagnostics).
 #[derive(Clone, Debug, Default)]
-pub(crate) struct BracketScan {
-    pub(crate) depths: Vec<u8>,
-    pub(crate) pairs: Vec<Pair>,
-    pub(crate) brace_pairs: Vec<BracePair>,
+pub struct BracketScan {
+    pub depths: Vec<u8>,
+    pub pairs: Vec<Pair>,
+    pub brace_pairs: Vec<BracePair>,
     /// Closing bracket character indices in source order.
-    pub(crate) closing_brackets: Vec<(usize, char)>,
+    pub closing_brackets: Vec<(usize, char)>,
     /// Char indices of closing brackets that matched no open bracket.
-    pub(crate) unmatched_closes: Vec<usize>,
+    pub unmatched_closes: Vec<usize>,
 }

@@ -1,8 +1,8 @@
 use eframe::egui;
 
 use crate::app::AppCommand;
-use crate::fonts;
-use crate::guides::EditorOverlay;
+use crate::core::fonts;
+use crate::editor::guides::EditorOverlay;
 
 pub fn show_menu_bar(
     ui: &mut egui::Ui,
@@ -157,7 +157,7 @@ pub fn show_menu_bar(
                 }
             });
             ui.menu_button("Theme", |ui| {
-                for theme in crate::theme::Theme::ALL {
+                for theme in crate::core::theme::Theme::ALL {
                     let label = if theme.is_beta() {
                         format!("{} (beta)", theme.name())
                     } else {

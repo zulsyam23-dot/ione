@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use eframe::egui::{self, Color32};
 
-use crate::style::{Palette, apply_style};
-use crate::theme::Theme;
+use crate::core::style::{Palette, apply_style};
+use crate::core::theme::Theme;
 
 pub(super) const HANDLE: f32 = 6.0;
 

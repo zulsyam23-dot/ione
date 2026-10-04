@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use eframe::egui;
 
 use crate::app::AppCommand;
-use crate::icons::{Icon, Icons};
+use crate::core::icons::{Icon, Icons};
 
 #[derive(Clone)]
 pub struct FileResult {

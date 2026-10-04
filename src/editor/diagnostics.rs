@@ -11,10 +11,10 @@ use eframe::egui::{self, Rect, Stroke};
 use egui_code_editor::Syntax;
 
 use crate::editor::folds::FoldView;
-use crate::guides::analyze_brackets;
-use crate::guides::brackets::BracketScan;
-use crate::guides::geometry::char_rect;
-use crate::style::Palette;
+use crate::editor::guides::analyze_brackets;
+use crate::editor::guides::brackets::BracketScan;
+use crate::editor::guides::geometry::char_rect;
+use crate::core::style::Palette;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Severity {

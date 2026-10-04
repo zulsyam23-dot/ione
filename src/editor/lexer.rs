@@ -16,13 +16,13 @@ use egui_code_editor::{Syntax, Token, TokenType};
 
 /// Per-char class. `STR`/`COMMENT` are the "masked" bits the bracket scan
 /// must skip; `STR` vs `COMMENT` also picks the paint color.
-pub(crate) const CODE: u8 = 0;
-pub(crate) const STR: u8 = 1;
-pub(crate) const COMMENT: u8 = 2;
+pub const CODE: u8 = 0;
+pub const STR: u8 = 1;
+pub const COMMENT: u8 = 2;
 
 /// One pass over `text`: per-char class mask + hyperlink ranges (links still
 /// scraped from the egui lexer, which is fine for URLs — purely cosmetic).
-pub(crate) fn classify(text: &str, syntax: &Syntax) -> (Vec<u8>, Links) {
+pub fn classify(text: &str, syntax: &Syntax) -> (Vec<u8>, Links) {
     let chars: Vec<char> = text.chars().collect();
     let mut cls = vec![CODE; chars.len()];
     match syntax.language {
@@ -48,7 +48,7 @@ fn links(text: &str, syntax: &Syntax) -> Links {
 
 /// Token stream for Rust: correct lifetimes, raw strings, byte strings, char
 /// escapes and nested block comments, classified with `syntax` color rules.
-pub(crate) fn rust_tokens(text: &str, syntax: &Syntax) -> Vec<Token> {
+pub fn rust_tokens(text: &str, syntax: &Syntax) -> Vec<Token> {
     let chars: Vec<char> = text.chars().collect();
     let n = chars.len();
     let mut out = Vec::new();
@@ -707,7 +707,7 @@ mod tests {
         let (cls, _) = classify(content, syntax);
         let mask: Vec<bool> = cls.iter().map(|&c| c != CODE).collect();
         let chars: Vec<char> = content.chars().collect();
-        let scan = crate::guides::analyze_brackets(&chars, &mask);
+        let scan = crate::editor::guides::analyze_brackets(&chars, &mask);
         scan.pairs.iter().any(|p| p.close == usize::MAX) || !scan.unmatched_closes.is_empty()
     }
 

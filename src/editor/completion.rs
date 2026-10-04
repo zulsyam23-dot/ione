@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 
 use egui_code_editor::{Syntax, Token, TokenType};
 
-use crate::outline::Symbol;
+use crate::workspace::outline::Symbol;
 
 /// Popup coloring bucket, mirroring `TokenType` for keyword/type/special.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,7 +55,7 @@ pub enum Action {
 }
 
 /// Identifier characters a completion prefix can span.
-pub(crate) fn is_word_char(c: char) -> bool {
+pub fn is_word_char(c: char) -> bool {
     c == '_' || c.is_alphanumeric()
 }
 
@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn syntax_words_and_symbols_are_merged_in_order() {
         let content = "fn main() { ary_other(); }\nfn add(a: i32, b: i32) {\n}\n";
-        let syms = crate::outline::extract_symbols(content, &rust());
+        let syms = crate::workspace::outline::extract_symbols(content, &rust());
         let items = build_items(content, &rust(), &syms, "a");
 
         assert!(

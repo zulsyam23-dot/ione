@@ -9,8 +9,8 @@ use std::time::Instant;
 use eframe::egui::{self, RichText};
 
 use crate::app::AppCommand;
-use crate::icons::{Icon, Icons};
-use crate::style::{Palette, header_label};
+use crate::core::icons::{Icon, Icons};
+use crate::core::style::{Palette, header_label};
 
 use super::{ChangeKind, GitChange, GitPanel, REFRESH_INTERVAL};
 

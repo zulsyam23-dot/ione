@@ -10,7 +10,7 @@ const BRACE: usize = 2;
 /// Mask-aware bracket scan: chars inside strings/comments (`mask`) are ignored,
 /// so nesting depth and pairs stay correct around them. Unmatched opens are
 /// returned with `close == usize::MAX`.
-pub(crate) fn analyze_brackets(chars: &[char], mask: &[bool]) -> BracketScan {
+pub fn analyze_brackets(chars: &[char], mask: &[bool]) -> BracketScan {
     let mut depths = vec![u8::MAX; chars.len()];
     let mut stack: Vec<(usize, usize)> = Vec::new(); // (open idx, kind)
     let mut pairs: Vec<Pair> = Vec::new();

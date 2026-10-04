@@ -166,8 +166,8 @@ pub fn draw_selection(
         let Some(de) = to_display(re.saturating_sub(1)) else {
             continue;
         };
-        let start = crate::guides::geometry::char_rect(galley, origin, ds);
-        let end = crate::guides::geometry::char_rect(galley, origin, de + 1);
+        let start = crate::editor::guides::geometry::char_rect(galley, origin, ds);
+        let end = crate::editor::guides::geometry::char_rect(galley, origin, de + 1);
         let top = start.top().min(end.top());
         let bottom = start.bottom().max(end.bottom());
         let rect = egui::Rect::from_min_max(

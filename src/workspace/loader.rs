@@ -11,10 +11,10 @@ use std::sync::mpsc;
 
 use egui_code_editor::Syntax;
 
-use crate::diagnostics::Diagnostic;
+use crate::editor::diagnostics::Diagnostic;
 use crate::editor::folds::FoldView;
-use crate::guides::BracketScan;
-use crate::outline::Symbol;
+use crate::editor::guides::BracketScan;
+use crate::workspace::outline::Symbol;
 
 /// Upper bound on concurrent load workers; past it a new request is refused
 /// instead of stacking another full read + analysis.
@@ -215,7 +215,7 @@ pub fn file_size(path: &Path) -> u64 {
 /// would otherwise run on the UI thread.
 fn read_and_analyze(path: &Path) -> Result<(String, Analysis), String> {
     let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let syntax = crate::tabs::TabManager::detect_syntax(&path.to_path_buf());
+    let syntax = crate::workspace::tabs::TabManager::detect_syntax(&path.to_path_buf());
     // Borrow, then move the content out — no clone of a possibly huge buffer.
     let analysis = analyze(&content, &syntax);
     Ok((content, analysis))
@@ -225,11 +225,11 @@ fn read_and_analyze(path: &Path) -> Result<(String, Analysis), String> {
 /// in `Tab::refresh_cache` falls back to exactly these passes when no
 /// off-thread result is available.
 pub fn analyze(content: &str, syntax: &Syntax) -> Analysis {
-    let (diagnostics, scan, mask) = crate::diagnostics::analyze_with_scan(content, syntax);
-    let symbols = crate::outline::extract_symbols(content, syntax);
+    let (diagnostics, scan, mask) = crate::editor::diagnostics::analyze_with_scan(content, syntax);
+    let symbols = crate::workspace::outline::extract_symbols(content, syntax);
     let fold_opens = crate::editor::folds::foldable_opens(content, &scan.brace_pairs);
     Analysis {
-        hash: crate::diagnostics::hash_content(content),
+        hash: crate::editor::diagnostics::hash_content(content),
         syntax: syntax.clone(),
         diagnostics,
         symbols,
@@ -254,11 +254,11 @@ mod tests {
         let syntax = Syntax::rust();
         let a = analyze(&content, &syntax);
 
-        let (d, scan, mask) = crate::diagnostics::analyze_with_scan(&content, &syntax);
-        let symbols = crate::outline::extract_symbols(&content, &syntax);
+        let (d, scan, mask) = crate::editor::diagnostics::analyze_with_scan(&content, &syntax);
+        let symbols = crate::workspace::outline::extract_symbols(&content, &syntax);
         let fold_opens = crate::editor::folds::foldable_opens(&content, &scan.brace_pairs);
 
-        assert_eq!(a.hash, crate::diagnostics::hash_content(&content));
+        assert_eq!(a.hash, crate::editor::diagnostics::hash_content(&content));
         assert_eq!(a.diagnostics.len(), d.len());
         assert_eq!(a.symbols.len(), symbols.len());
         assert_eq!(a.scan.brace_pairs.len(), scan.brace_pairs.len());
@@ -298,7 +298,7 @@ mod tests {
         assert_eq!(file.content, sample());
         assert_eq!(
             file.analysis.hash,
-            crate::diagnostics::hash_content(&file.content)
+            crate::editor::diagnostics::hash_content(&file.content)
         );
         assert!(!loader.busy());
         assert!(loader.pending.is_none());

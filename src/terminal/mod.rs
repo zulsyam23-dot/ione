@@ -9,7 +9,7 @@ use eframe::egui::{
 };
 use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 
-use crate::style::Palette;
+use crate::core::style::Palette;
 
 const FONT_SIZE: f32 = 14.0;
 /// Inset between the panel border and the character grid, so the prompt never

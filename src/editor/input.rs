@@ -15,14 +15,14 @@
 use eframe::egui::{self, Event};
 use egui::widgets::text_edit::TextEditState;
 
-use crate::completion;
-use crate::tabs::Tab;
+use crate::editor::completion;
+use crate::workspace::tabs::Tab;
 
 use super::multi;
 
 /// Whole-line keyboard operations dispatched in the editor's event pass.
 #[derive(Clone, Copy)]
-pub(crate) enum LineOp {
+pub enum LineOp {
     Comment,
     Duplicate,
     Delete,
@@ -58,7 +58,7 @@ fn line_indent(content: &str, caret: usize) -> String {
 /// single-cursor `TextEdit` must not apply it twice); any click or arrow key
 /// cancels the mode and passes through normally. After the edit the carets
 /// move to the end of each change so further typing appends.
-pub(crate) fn handle_multi_claim(ui: &mut egui::Ui, editor_id: &str, tab: &mut Tab) {
+pub fn handle_multi_claim(ui: &mut egui::Ui, editor_id: &str, tab: &mut Tab) {
     let Some(multi) = tab.multi.clone() else {
         return;
     };
@@ -130,7 +130,7 @@ pub(crate) fn handle_multi_claim(ui: &mut egui::Ui, editor_id: &str, tab: &mut T
 /// while a suggestion is being selected, Enter/Tab must not insert a
 /// newline/tab, Esc must not leak to the app menu. Click and caret moves close
 /// it too. Mutually exclusive with the multi-select claim on the same keys.
-pub(crate) fn handle_completion_claim(ui: &mut egui::Ui, editor_id: &str, tab: &mut Tab) {
+pub fn handle_completion_claim(ui: &mut egui::Ui, editor_id: &str, tab: &mut Tab) {
     if tab.multi.is_some() {
         return;
     }
@@ -227,7 +227,7 @@ pub(crate) fn handle_completion_claim(ui: &mut egui::Ui, editor_id: &str, tab: &
 ///
 /// Returns `(pending_wrap_close, pending_lineop)` for the caller's post-frame
 /// handling.
-pub(crate) fn text_editing_pass(
+pub fn text_editing_pass(
     ui: &mut egui::Ui,
     editor_id: &str,
     tab: &mut Tab,

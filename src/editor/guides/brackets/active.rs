@@ -6,7 +6,7 @@
 use eframe::egui::{self, Pos2};
 
 #[cfg(test)]
-use crate::guides::geometry::{RowStarts, char_rect, char_rect_indexed, pair_guide_x_indexed};
+use crate::editor::guides::geometry::{RowStarts, char_rect, char_rect_indexed, pair_guide_x_indexed};
 
 use super::{BracketScan, Pair};
 
@@ -14,7 +14,7 @@ use super::{BracketScan, Pair};
 /// with a drawn guide (multi-line) count; pairs are sorted by `open`, so a
 /// later match is more deeply nested and simply overwrites — innermost wins.
 #[cfg(test)]
-pub(crate) fn hovered_pair(
+pub fn hovered_pair(
     pointer: Pos2,
     galley: &egui::Galley,
     origin: Pos2,
@@ -47,7 +47,7 @@ impl BracketScan {
     /// leaves only candidates that could still be open at the cursor; walking
     /// them backwards visits innermost-first. Cost = nesting depth at the
     /// cursor, not the total pair count.
-    pub(crate) fn active_pair(&self, cursor: usize) -> Option<Pair> {
+    pub fn active_pair(&self, cursor: usize) -> Option<Pair> {
         let split = self.pairs.partition_point(|p| p.open < cursor);
         for p in self.pairs[..split].iter().rev() {
             if p.close == usize::MAX || p.close >= cursor {
@@ -61,7 +61,7 @@ impl BracketScan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::guides::brackets::scanner::analyze_brackets;
+    use crate::editor::guides::brackets::scanner::analyze_brackets;
 
     fn scan_of(content: &str) -> BracketScan {
         analyze_brackets(&content.chars().collect::<Vec<char>>(), &[])

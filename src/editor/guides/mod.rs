@@ -11,12 +11,12 @@ use std::sync::Arc;
 use eframe::egui::{self, Id, Pos2};
 use egui::text::CCursorRange;
 
-use crate::style::Palette;
+use crate::core::style::Palette;
 
-pub(crate) mod brackets;
-pub(crate) mod geometry;
+pub mod brackets;
+pub mod geometry;
 
-pub(crate) use brackets::{BracketScan, Pair, analyze_brackets};
+pub use brackets::{BracketScan, Pair, analyze_brackets};
 
 use geometry::{RowStarts, char_line, char_rect_indexed, guide_line, pair_guide_x_indexed};
 
@@ -223,7 +223,7 @@ fn draw_editor_overlays(
     );
 }
 
-pub(crate) fn draw_editor_overlays_with_pairs(
+pub fn draw_editor_overlays_with_pairs(
     ui: &egui::Ui,
     editor_id: &str,
     galley: &egui::Galley,
@@ -735,7 +735,7 @@ mod tests {
         let ctx = egui::Context::default();
         ctx.set_fonts(egui::FontDefinitions::default());
         let content = "pub struct Button {\n    pub width: f32,\n    pub bg: Color,\n    hovered: Cell<bool>,\n}\n\nimpl Button {\n    pub fn new(label: &str, bg: Color) -> Self {\n        Button {\n            width: 120.0,\n            height: 40.0,\n        }\n    }\n}\n";
-        let mut tab = crate::tabs::Tab::new("main.rs", content, Default::default());
+        let mut tab = crate::workspace::tabs::Tab::new("main.rs", content, Default::default());
         let overlay = EditorOverlay {
             bracket_guides: true,
             colorize_brackets: true,
@@ -752,11 +752,11 @@ mod tests {
                 crate::editor::show_editor(
                     ui,
                     &mut tab,
-                    crate::theme::Theme::GithubDark,
+                    crate::core::theme::Theme::GithubDark,
                     "000000",
                     &overlay,
                     &Palette::dark(),
-                    &mut crate::icons::Icons::new(),
+                    &mut crate::core::icons::Icons::new(),
                 );
             });
         });

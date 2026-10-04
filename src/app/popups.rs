@@ -1,6 +1,6 @@
 use eframe::egui::{self, Align, Layout};
 
-use crate::style::header_label;
+use crate::core::style::header_label;
 
 use super::AppCommand;
 use super::EditorApp;
@@ -332,8 +332,8 @@ impl EditorApp {
                 egui::Frame::NONE
                     .fill(self.palette.panel_active)
                     .stroke(egui::Stroke::new(1.0, self.palette.border))
-                    .corner_radius(0)
-                    .inner_margin(egui::Margin::symmetric(12, 8))
+                    .corner_radius(8)
+                    .inner_margin(egui::Margin::symmetric(14, 10))
                     .show(ui, |ui| {
                         ui.label(
                             egui::RichText::new(msg).color(self.palette.text.gamma_multiply(alpha)),

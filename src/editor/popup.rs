@@ -4,8 +4,8 @@ use eframe::egui;
 
 use egui_code_editor::{ColorTheme, TokenType};
 
-use crate::completion::{self, CompletionState};
-use crate::style::Palette;
+use crate::editor::completion::{self, CompletionState};
+use crate::core::style::Palette;
 
 use super::FONT_SIZE;
 
@@ -14,7 +14,7 @@ use super::FONT_SIZE;
 /// through the same scrolled painter as the guides, so it tracks the text.
 /// Pure shapes, no widget: clicks pass through to TextEdit (which closes the
 /// popup), navigation is keyboard-only.
-pub(crate) fn draw_completion_popup(
+pub fn draw_completion_popup(
     ui: &egui::Ui,
     anchor: egui::Pos2,
     st: &CompletionState,

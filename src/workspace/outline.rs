@@ -1,7 +1,7 @@
 use eframe::egui::{self, Align, Layout, RichText};
 use egui_code_editor::Syntax;
 
-use crate::style::{Palette, header_label};
+use crate::core::style::{Palette, header_label};
 
 #[derive(Clone)]
 pub struct Symbol {

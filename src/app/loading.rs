@@ -183,7 +183,7 @@ fn upload_frames(
 fn loding_frames() -> Option<&'static [(egui::ColorImage, Duration)]> {
     static FRAMES: OnceLock<Option<Vec<(egui::ColorImage, Duration)>>> = OnceLock::new();
     FRAMES
-        .get_or_init(|| decode_frames(include_bytes!("..\\assets\\icons\\app\\loding.gif")))
+        .get_or_init(|| decode_frames(include_bytes!("..\\..\\assets\\icons\\app\\loding.gif")))
         .as_deref()
 }
 

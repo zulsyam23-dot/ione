@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 use eframe::egui;
 
 use crate::app::AppCommand;
-use crate::gitignore::Ignores;
-use crate::icons::{Icon, Icons};
-use crate::style::Palette;
+use crate::workspace::gitignore::Ignores;
+use crate::core::icons::{Icon, Icons};
+use crate::core::style::Palette;
 
 pub struct FileTree {
     pub root: Option<PathBuf>,
@@ -179,13 +179,10 @@ impl FileTree {
                     } else {
                         egui::Color32::TRANSPARENT
                     };
-                    let stroke = if hovered {
-                        egui::Stroke::new(1.0, palette.border)
-                    } else {
-                        egui::Stroke::NONE
-                    };
+                    let stroke = egui::Stroke::NONE;
+                    let hover_rect = row_rect.shrink2(egui::vec2(4.0, 1.0));
                     ui.painter()
-                        .rect(row_rect, 0.0, fill, stroke, egui::StrokeKind::Inside);
+                        .rect(hover_rect, 5.0, fill, stroke, egui::StrokeKind::Inside);
 
                     ui.horizontal(|ui| {
                         if entry.is_dir {

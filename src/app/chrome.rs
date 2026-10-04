@@ -2,12 +2,12 @@ use std::path::PathBuf;
 
 use eframe::egui::{self, Align, Color32, Layout, RichText};
 
-use crate::diagnostics::Severity;
+use crate::editor::diagnostics::Severity;
 use crate::git::GitPanel;
-use crate::icons::Icon;
-use crate::menu;
-use crate::style::{Palette, frame, header_label};
-use crate::tabs::TabManager;
+use crate::core::icons::Icon;
+use crate::app::menu;
+use crate::core::style::{Palette, frame, header_label};
+use crate::workspace::tabs::TabManager;
 
 use super::AppCommand;
 use super::EditorApp;
@@ -39,6 +39,13 @@ impl EditorApp {
                             .clicked()
                         {
                             commands.push(AppCommand::ToggleTerminal);
+                        }
+                        if self
+                            .icons
+                            .image_button(ui, Icon::Chat, 16.0, "AI Chat (Ctrl+Shift+A)")
+                            .clicked()
+                        {
+                            commands.push(AppCommand::ToggleAiChat);
                         }
                         if self
                             .icons
@@ -161,12 +168,26 @@ impl EditorApp {
                         } else {
                             Color32::TRANSPARENT
                         };
-                        let tab_frame = egui::Frame::NONE.fill(fill).corner_radius(0.0);
+                        let tab_frame = egui::Frame::NONE.fill(fill).corner_radius(egui::CornerRadius {
+                            nw: 6,
+                            ne: 6,
+                            sw: 0,
+                            se: 0,
+                        });
                         let response = tab_frame
                             .show(ui, |ui| {
                                 ui.add(egui::Button::new(RichText::new(&label).color(color)))
                             })
                             .inner;
+
+                        if active {
+                            let r = response.rect;
+                            ui.painter().hline(
+                                r.left()..=r.right(),
+                                r.bottom() - 1.0,
+                                egui::Stroke::new(2.0, p.accent),
+                            );
+                        }
 
                         if response.clicked() {
                             switch_to = Some(i);

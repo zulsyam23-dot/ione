@@ -14,12 +14,12 @@
 //! background work bookkeeping, and the queries the rest of the app asks
 //! (counts, status-bar text, explorer tints).
 
-mod actions;
-mod change;
-mod diff;
-mod marks;
-mod ui;
-mod worker;
+pub mod actions;
+pub mod change;
+pub mod diff;
+pub mod marks;
+pub mod ui;
+pub mod worker;
 
 pub use change::{ChangeKind, GitChange, parse_status};
 pub use diff::DiffView;
@@ -31,7 +31,7 @@ use std::time::Instant;
 
 use eframe::egui;
 
-use crate::style::Palette;
+use crate::core::style::Palette;
 
 use worker::{GitEvent, git_run, scan_workspace};
 
@@ -359,7 +359,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    use crate::style::Palette;
+    use crate::core::style::Palette;
 
     #[test]
     fn explorer_tints_cover_files_and_ancestor_folders() {

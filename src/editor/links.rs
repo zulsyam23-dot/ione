@@ -7,7 +7,7 @@ use egui_code_editor::highlighting::Links;
 
 use super::SPACE_HOLDER;
 
-pub(crate) fn handle_links(text_edit: &TextEditOutput, links: &Links) {
+pub fn handle_links(text_edit: &TextEditOutput, links: &Links) {
     if !text_edit.response.contains_pointer() {
         return;
     }

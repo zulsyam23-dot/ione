@@ -100,8 +100,9 @@ pub fn apply_style(ctx: &egui::Context, p: Palette) {
     ctx.set_visuals(visuals.clone());
 
     ctx.all_styles_mut(|style| {
-        style.spacing.item_spacing = egui::vec2(6.0, 4.0);
-        style.spacing.button_padding = egui::vec2(8.0, 4.0);
+        style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+        style.spacing.button_padding = egui::vec2(10.0, 5.0);
+        style.spacing.scroll.bar_width = 10.0;
         style.visuals = visuals.clone();
     });
 }
@@ -123,12 +124,14 @@ fn build_visuals(p: &Palette) -> egui::Visuals {
     visuals.widgets.active.weak_bg_fill = p.panel_active;
     visuals.widgets.active.bg_fill = p.panel_active;
 
-    // Flat, sharp buttons: no corner radius anywhere.
-    visuals.widgets.noninteractive.corner_radius = 0.0.into();
-    visuals.widgets.hovered.corner_radius = 0.0.into();
-    visuals.widgets.active.corner_radius = 0.0.into();
-    visuals.widgets.open.corner_radius = 0.0.into();
-    visuals.widgets.inactive.corner_radius = 0.0.into();
+    visuals.window_corner_radius = CornerRadius::same(10);
+
+    // Softly rounded widgets: mature and calm, never bubbly.
+    visuals.widgets.noninteractive.corner_radius = 5.0.into();
+    visuals.widgets.hovered.corner_radius = 5.0.into();
+    visuals.widgets.active.corner_radius = 5.0.into();
+    visuals.widgets.open.corner_radius = 5.0.into();
+    visuals.widgets.inactive.corner_radius = 5.0.into();
 
     visuals
 }

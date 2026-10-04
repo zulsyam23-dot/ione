@@ -9,18 +9,18 @@ use egui::text::LayoutJob;
 use egui_code_editor::{ColorTheme, TokenType};
 
 use super::{FONT_SIZE, TEXT_ROWS};
-use crate::diagnostics::Severity;
+use crate::editor::diagnostics::Severity;
 use crate::editor::folds::{FoldView, draw_fold_icons};
 use crate::editor::styling::format_font;
-use crate::icons::Icons;
-use crate::style::Palette;
+use crate::core::icons::Icons;
+use crate::core::style::Palette;
 
 /// Half-width columns kept between the last digit and the change marker, so
 /// the marker sits on the gutter's right edge without crowding the numbers.
 const MARKER_GAP_COLS: usize = 2;
 
 /// Returns the display rows whose fold icon was clicked.
-pub(crate) fn numlines_show(
+pub fn numlines_show(
     ui: &mut Ui,
     icons: &mut Icons,
     view: &FoldView,
@@ -134,7 +134,7 @@ pub(crate) fn numlines_show(
     clicked
 }
 
-pub(crate) fn build_counter(view: &FoldView) -> String {
+pub fn build_counter(view: &FoldView) -> String {
     let rows = view.rows.len().max(TEXT_ROWS);
     let max_indent = rows.to_string().len();
     let pad = 7usize;

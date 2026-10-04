@@ -12,8 +12,8 @@ use egui::text::LayoutJob;
 use egui_code_editor::highlighting::Links;
 use egui_code_editor::{ColorTheme, Syntax, Token, TokenType};
 
-use crate::guides::{EditorOverlay, analyze_brackets};
-use crate::style::Palette;
+use crate::editor::guides::{EditorOverlay, analyze_brackets};
+use crate::core::style::Palette;
 
 use super::FONT_SIZE;
 use super::lexer;
@@ -22,8 +22,8 @@ use super::lexer;
 /// Shared by the layouter and overlay so reusing a cached galley does not copy
 /// per-character scan data on every frame.
 #[derive(Clone)]
-pub(crate) struct Styled {
-    pub(crate) scan: Arc<crate::guides::BracketScan>,
+pub struct Styled {
+    pub scan: Arc<crate::editor::guides::BracketScan>,
 }
 
 /// One pass per role: char classes + links, a mask-aware bracket scan, then
@@ -31,7 +31,7 @@ pub(crate) struct Styled {
 /// `lexer::rust_tokens`; other languages keep the egui tokenizer but their
 /// colors are overridden by the correct mask, so a mis-lex can never bleed
 /// string color into code or hide a bracket.
-pub(crate) fn layout_styled(
+pub fn layout_styled(
     text: &str,
     syntax: &Syntax,
     theme: &ColorTheme,
@@ -101,12 +101,12 @@ pub(crate) fn layout_styled(
 /// unfolded (real) content to keep fold regions, guide suppression, and the
 /// diagnostics honest about what is inside a string/comment. Mask is `true`
 /// for every STR/COMMENT char.
-pub(crate) fn mask_and_links(text: &str, syntax: &Syntax) -> (Vec<bool>, Links) {
+pub fn mask_and_links(text: &str, syntax: &Syntax) -> (Vec<bool>, Links) {
     let (classes, links) = lexer::classify(text, syntax);
     (classes.iter().map(|&c| c != lexer::CODE).collect(), links)
 }
 
-pub(crate) fn format_font(font_size: f32, color: egui::Color32) -> egui::text::TextFormat {
+pub fn format_font(font_size: f32, color: egui::Color32) -> egui::text::TextFormat {
     egui::text::TextFormat::simple(FontId::monospace(font_size), color)
 }
 
@@ -114,7 +114,7 @@ pub(crate) fn format_font(font_size: f32, color: egui::Color32) -> egui::text::T
 /// the mask+links depend on — theme, overlay toggles, rainbow palette, and the
 /// syntax language (Save As can swap the language without the content
 /// changing). Fold guides are excluded: the guides pass uses its own scan.
-pub(crate) fn style_key(
+pub fn style_key(
     theme: &ColorTheme,
     overlay: &EditorOverlay,
     palette: &Palette,

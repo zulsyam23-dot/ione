@@ -1,26 +1,5 @@
-mod app;
-mod completion;
-mod diagnostics;
-mod editor;
-mod file_tree;
-mod fonts;
-mod git;
-mod gitignore;
-mod guides;
-mod icons;
-mod loader;
-mod loading;
-mod menu;
-mod outline;
-mod search;
-mod settings;
-mod style;
-mod tabs;
-mod terminal;
-mod theme;
-
 use eframe::egui;
-use style::{Palette, apply_style};
+use ione::core::style::{Palette, apply_style};
 
 fn main() -> eframe::Result<()> {
     install_panic_hook();
@@ -44,7 +23,7 @@ fn main() -> eframe::Result<()> {
         Box::new(|cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
             setup_visuals(&cc.egui_ctx);
-            Ok(Box::new(app::EditorApp::new()))
+            Ok(Box::new(ione::app::EditorApp::new()))
         }),
     )
 }

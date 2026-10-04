@@ -3,25 +3,26 @@ use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Align, Layout};
 
-use crate::file_tree::FileTree;
+use crate::workspace::file_tree::FileTree;
 use crate::git::GitPanel;
-use crate::guides::EditorOverlay;
-use crate::icons::Icons;
-use crate::loader::FileLoader;
-use crate::loading::LoadingOverlay;
-use crate::menu;
-use crate::outline::OutlinePanel;
-use crate::search::SearchPanel;
-use crate::style::{Palette, frame, header_label};
-use crate::tabs::TabManager;
+use crate::editor::guides::EditorOverlay;
+use crate::core::icons::{Icon, Icons};
+use crate::workspace::loader::FileLoader;
+use crate::app::loading::LoadingOverlay;
+use crate::workspace::outline::OutlinePanel;
+use crate::workspace::search::SearchPanel;
+use crate::core::style::{Palette, frame, header_label};
+use crate::workspace::tabs::TabManager;
 use crate::terminal::TerminalPanel;
-use crate::theme::Theme;
+use crate::core::theme::Theme;
 
-mod actions;
-mod chrome;
-mod explorer_bar;
-mod popups;
-mod utils;
+pub mod actions;
+pub mod chrome;
+pub mod explorer_bar;
+pub mod popups;
+pub mod utils;
+pub mod loading;
+pub mod menu;
 
 /// Minimum time the loading splash stays up once its load has landed, so a
 /// quick open still shows the GIF instead of flashing it for a couple of frames.
@@ -50,6 +51,7 @@ pub enum AppCommand {
     ToggleSidebar,
     ToggleTerminal,
     ToggleGit,
+    ToggleAiChat,
     RefreshFileTree,
     SetTheme(Theme),
     SetEditorFont(String),
@@ -97,7 +99,8 @@ pub struct EditorApp {
     /// Lightweight "open file" palette (Ctrl+P), open when `Some`.
     pub quick_open: Option<QuickOpen>,
     pub recent_files: Vec<PathBuf>,
-    pub settings: crate::settings::Settings,
+    pub settings: crate::core::settings::Settings,
+    pub plugins: crate::plugin::PluginRegistry,
     pub settings_applied: bool,
 }
 
@@ -156,8 +159,9 @@ impl Default for EditorApp {
             pending_theme: None,
             quick_open: None,
             recent_files: Vec::new(),
-            settings: crate::settings::Settings::default(),
+            settings: crate::core::settings::Settings::default(),
             settings_applied: false,
+            plugins: crate::plugin::PluginRegistry::new(),
         }
     }
 }
@@ -166,22 +170,32 @@ impl EditorApp {
     pub fn new() -> Self {
         let mut app = Self::default();
         // Persisted preferences (theme/font) and the recent-files list.
-        let loaded = crate::settings::load();
-        app.settings = crate::settings::Settings {
+        let loaded = crate::core::settings::load();
+        app.settings = crate::core::settings::Settings {
             theme: loaded.theme.clone(),
             font: loaded.font.clone(),
         };
         if let Some(t) = &loaded.theme {
-            if let Some(theme) = crate::theme::Theme::ALL.iter().find(|x| x.name() == t) {
+            if let Some(theme) = crate::core::theme::Theme::ALL.iter().find(|x| x.name() == t) {
                 app.theme = *theme;
             }
         }
         if let Some(f) = &loaded.font {
-            if crate::fonts::FONTS.iter().any(|(n, _)| n == f) {
+            if crate::core::fonts::FONTS.iter().any(|(n, _)| n == f) {
                 app.editor_font = f.clone();
             }
         }
-        app.recent_files = crate::settings::load_recents();
+        app.recent_files = crate::core::settings::load_recents();
+
+        let mut pctx = crate::plugin::PluginContext {
+            palette: app.palette,
+            bracket_guides: app.bracket_guides,
+            colorize_brackets: app.colorize_brackets,
+        };
+        app.plugins.register(
+            Box::new(crate::plugin::builtin::ai_chat::AiChatPlugin::new()),
+            &mut pctx,
+        );
         // Default workspace = the user's Documents, so new files/folders are
         // easy to find instead of living in an invisible in-memory state.
         if let Some(docs) = utils::documents_dir() {
@@ -210,7 +224,7 @@ impl EditorApp {
         for file in loaded {
             self.tabs
                 .open_loaded(file.path.clone(), file.content, file.analysis);
-            crate::settings::push_recent(&mut self.recent_files, file.path);
+            crate::core::settings::push_recent(&mut self.recent_files, file.path);
         }
         for e in errors {
             self.font_msg = Some((e, Instant::now()));
@@ -371,7 +385,7 @@ impl eframe::App for EditorApp {
         if !self.settings_applied {
             self.settings_applied = true;
             if self.editor_font != "JetBrains Mono" {
-                let _ = crate::fonts::apply_font(&ctx, &self.editor_font);
+                let _ = crate::core::fonts::apply_font(&ctx, &self.editor_font);
             }
             utils::apply_egui_theme(&ctx, self.theme);
         }
@@ -382,6 +396,23 @@ impl eframe::App for EditorApp {
             Palette::light()
         };
         self.icons.set_color(self.palette.text);
+
+        // Let plugins adjust live UI state before anything paints.
+        let mut pctx = crate::plugin::PluginContext {
+            palette: self.palette,
+            bracket_guides: self.bracket_guides,
+            colorize_brackets: self.colorize_brackets,
+        };
+        self.plugins.on_tick(&mut pctx);
+        self.palette = pctx.palette;
+        self.bracket_guides = pctx.bracket_guides;
+        self.colorize_brackets = pctx.colorize_brackets;
+        let mut pctx_ui = crate::plugin::PluginContext {
+            palette: self.palette,
+            bracket_guides: self.bracket_guides,
+            colorize_brackets: self.colorize_brackets,
+        };
+        self.plugins.on_ui(&ctx, &mut pctx_ui);
 
         self.auto_save(&ctx);
         menu::handle_shortcuts(&ctx, &mut commands, &mut self.ctrl_k_pending);
@@ -510,6 +541,43 @@ impl eframe::App for EditorApp {
             root_ui.painter().vline(
                 git_rect.left() + 0.5,
                 git_rect.y_range(),
+                egui::Stroke::new(1.0, self.palette.border),
+            );
+        }
+
+        // Docked plugin panel (e.g. AI Chat), stacked beside Source Control.
+        if self.plugins.any_dock_open() {
+            let dock_rect = egui::Panel::right("plugin_dock")
+                .exact_size(420.0)
+                .show_separator_line(false)
+                .frame(frame(self.palette.panel, self.palette.border, 0, 8))
+                .show(root_ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(header_label(ui, "AI Chat"));
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.add_space(4.0);
+                            if self
+                                .icons
+                                .image_button(ui, Icon::Close, 16.0, "Close")
+                                .clicked()
+                            {
+                                commands.push(AppCommand::ToggleAiChat);
+                            }
+                        });
+                    });
+                    ui.add_space(6.0);
+                    let mut pctx_dock = crate::plugin::PluginContext {
+                        palette: self.palette,
+                        bracket_guides: self.bracket_guides,
+                        colorize_brackets: self.colorize_brackets,
+                    };
+                    self.plugins.on_dock(ui, &mut pctx_dock);
+                })
+                .response
+                .rect;
+            root_ui.painter().vline(
+                dock_rect.left() + 0.5,
+                dock_rect.y_range(),
                 egui::Stroke::new(1.0, self.palette.border),
             );
         }
@@ -676,7 +744,7 @@ mod tests {
         assert_eq!(app.tabs.tabs.len(), 1);
         assert_eq!(app.tabs.tabs[0].content, "fn main() {}\n");
 
-        crate::settings::save_recents(&recents_before);
+        crate::core::settings::save_recents(&recents_before);
         let _ = std::fs::remove_file(&path);
     }
 
@@ -720,7 +788,7 @@ mod tests {
         assert!(app.tabs.tabs[0].pending_analysis.is_some());
         assert!(!app.loader.busy());
 
-        crate::settings::save_recents(&recents_before);
+        crate::core::settings::save_recents(&recents_before);
         let _ = std::fs::remove_file(&path);
     }
 
@@ -784,7 +852,7 @@ mod tests {
         assert!(!app.loader.busy());
         assert!(app.loading.is_none());
 
-        crate::settings::save_recents(&recents_before);
+        crate::core::settings::save_recents(&recents_before);
         let _ = std::fs::remove_file(&path);
     }
 }

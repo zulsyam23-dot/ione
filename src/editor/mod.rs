@@ -22,32 +22,35 @@ use egui::text::CCursor;
 use egui::text::CCursorRange;
 use egui::widgets::text_edit::TextEditOutput;
 use egui_code_editor::highlighting::Links;
+use completion::CompletionState;
 
-use crate::completion::{self, CompletionState};
-use crate::guides::EditorOverlay;
-use crate::icons::Icons;
-use crate::style::Palette;
-use crate::tabs::Tab;
-use crate::theme::Theme;
+use crate::editor::guides::EditorOverlay;
+use crate::core::icons::Icons;
+use crate::core::style::Palette;
+use crate::workspace::tabs::Tab;
+use crate::core::theme::Theme;
 
 use self::folds::FoldView;
 use self::input::LineOp;
 
-pub(crate) mod cursor;
-pub(crate) mod folds;
-pub(crate) mod gutter;
+pub mod cursor;
+pub mod folds;
+pub mod gutter;
 
-pub(crate) mod input;
-pub(crate) mod lexer;
-pub(crate) mod links;
-pub(crate) mod multi;
-pub(crate) mod ops;
-pub(crate) mod popup;
-pub(crate) mod styling;
+pub mod input;
+pub mod lexer;
+pub mod links;
+pub mod multi;
+pub mod ops;
+pub mod popup;
+pub mod styling;
+pub mod completion;
+pub mod diagnostics;
+pub mod guides;
 
-pub(crate) const FONT_SIZE: f32 = 14.0;
-pub(crate) const TEXT_ROWS: usize = 10;
-pub(crate) const SPACE_HOLDER: &str = "â£";
+pub const FONT_SIZE: f32 = 14.0;
+pub const TEXT_ROWS: usize = 10;
+pub const SPACE_HOLDER: &str = "â£";
 
 /// Draws a code tab: one lexer pass per role (mask+links, then mask-aware
 /// bracket scan, then the colored job), scrolled text edit, then guides and
@@ -159,7 +162,7 @@ pub fn show_editor(
             }
         }
         diag_rows.sort_by_key(|&(row, severity)| {
-            (row, severity == crate::diagnostics::Severity::Warning)
+            (row, severity == crate::editor::diagnostics::Severity::Warning)
         });
         diag_rows.dedup_by_key(|&mut (row, _)| row);
         tab.cache.diag_rows = diag_rows;
@@ -227,9 +230,9 @@ pub fn show_editor(
                                 let text_hash = if folds_empty {
                                     content_hash0
                                 } else {
-                                    crate::diagnostics::hash_content(text_buffer.as_str())
+                                    crate::editor::diagnostics::hash_content(text_buffer.as_str())
                                 };
-                                let font_gen = crate::fonts::font_generation();
+                                let font_gen = crate::core::fonts::font_generation();
                                 let ppp = ui.ctx().pixels_per_point().to_bits();
                                 let cache_key = tab.cache.style_key;
                                 if tab
@@ -323,7 +326,7 @@ pub fn show_editor(
                                 }
                                 &tab.cache.filtered_pairs
                             };
-                            crate::guides::draw_editor_overlays_with_pairs(
+                            crate::editor::guides::draw_editor_overlays_with_pairs(
                                 ui,
                                 &editor_id,
                                 &output.galley,
@@ -347,7 +350,7 @@ pub fn show_editor(
                                 );
                             }
                             // Error/warning squiggles + hover tooltips.
-                            crate::diagnostics::draw_squiggles(
+                            crate::editor::diagnostics::draw_squiggles(
                                 ui,
                                 &editor_id,
                                 &output.galley,
@@ -824,7 +827,7 @@ mod repro {
         // Fold `outer` (opening brace on line 0) and `inner` (line 1).
         let reals: Vec<char> = tab.content.chars().collect();
         let (mask, _) = styling::mask_and_links(&tab.content, &tab.syntax);
-        let scan = crate::guides::analyze_brackets(&reals, &mask);
+        let scan = crate::editor::guides::analyze_brackets(&reals, &mask);
         let opens: Vec<usize> = scan
             .brace_pairs
             .iter()
@@ -861,7 +864,7 @@ mod repro {
         }
         let reals: Vec<char> = tab.content.chars().collect();
         let (mask, _) = styling::mask_and_links(&tab.content, &tab.syntax);
-        let scan = crate::guides::analyze_brackets(&reals, &mask);
+        let scan = crate::editor::guides::analyze_brackets(&reals, &mask);
         let opens: Vec<usize> = scan
             .brace_pairs
             .iter()

@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use eframe::egui;
 
-use crate::tabs::TabManager;
+use crate::workspace::tabs::TabManager;
 
 use super::EditorApp;
 use super::utils::{
@@ -158,7 +158,7 @@ impl EditorApp {
                     if !path.is_file() {
                         // The entry went missing; drop it so the menu stays honest.
                         self.recent_files.retain(|p| p != &path);
-                        crate::settings::save_recents(&self.recent_files);
+                        crate::core::settings::save_recents(&self.recent_files);
                         continue;
                     }
                     self.open_path(path);
@@ -252,6 +252,9 @@ impl EditorApp {
                 AppCommand::ToggleTerminal => {
                     self.terminal.toggle(ctx);
                 }
+                AppCommand::ToggleAiChat => {
+                    self.plugins.toggle_window("ai-chat");
+                }
                 AppCommand::ToggleGit => {
                     self.git.toggle();
                 }
@@ -275,7 +278,7 @@ impl EditorApp {
                 }
                 AppCommand::SetEditorFont(name) => {
                     self.editor_font = name.clone();
-                    match crate::fonts::apply_font(ctx, &name) {
+                    match crate::core::fonts::apply_font(ctx, &name) {
                         Ok(()) => {
                             self.font_msg = Some((format!("Font: {name}"), Instant::now()));
                         }
@@ -329,7 +332,7 @@ impl EditorApp {
                         let (mask, _) =
                             crate::editor::styling::mask_and_links(&tab.content, &tab.syntax);
                         let chars: Vec<char> = tab.content.chars().collect();
-                        let scan = crate::guides::analyze_brackets(&chars, &mask);
+                        let scan = crate::editor::guides::analyze_brackets(&chars, &mask);
                         let opens: Vec<usize> =
                             crate::editor::folds::foldable_opens(&tab.content, &scan.brace_pairs);
                         // `cursor_line` is 1-based (gutter numbering); fold
@@ -420,7 +423,7 @@ impl EditorApp {
             self.tabs.set_active(i);
             return;
         }
-        let bytes = crate::loader::file_size(&path);
+        let bytes = crate::workspace::loader::file_size(&path);
         if self.loader.request(path, bytes) {
             self.arm_open_splash();
         }
@@ -434,13 +437,13 @@ impl EditorApp {
             return;
         };
         let caption = (
-            crate::loader::display_name(&p.path),
-            format!("{} — sedang dibaca…", crate::loader::human_size(p.bytes)),
+            crate::workspace::loader::display_name(&p.path),
+            format!("{} — sedang dibaca…", crate::workspace::loader::human_size(p.bytes)),
         );
         match &mut self.loading {
             Some((ov, _)) if !ov.fullscreen => ov.caption = Some(caption),
             _ => {
-                if let Some(ov) = crate::loading::LoadingOverlay::editor_area(caption) {
+                if let Some(ov) = crate::app::loading::LoadingOverlay::editor_area(caption) {
                     self.loading = Some((ov, Instant::now()));
                 }
             }
