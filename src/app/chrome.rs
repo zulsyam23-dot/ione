@@ -2,11 +2,9 @@ use std::path::PathBuf;
 
 use eframe::egui::{self, Align, Color32, Layout, RichText};
 
-use crate::editor::diagnostics::Severity;
-use crate::git::GitPanel;
-use crate::core::icons::Icon;
 use crate::app::menu;
-use crate::core::style::{Palette, frame, header_label};
+use crate::core::icons::Icon;
+use crate::core::style::{Palette, frame};
 use crate::workspace::tabs::TabManager;
 
 use super::AppCommand;
@@ -64,78 +62,6 @@ impl EditorApp {
             });
     }
 
-    pub(super) fn show_status_bar(
-        root_ui: &mut egui::Ui,
-        tabs: &TabManager,
-        branch: &str,
-        git: &GitPanel,
-    ) {
-        let p = Palette::dark();
-        egui::Panel::bottom("status_bar")
-            .frame(frame(p.bg, p.border, 0, 5))
-            .show(root_ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(header_label(ui, &format!(" {}", branch)));
-                    ui.separator();
-                    if let Some(tab) = tabs.active_tab() {
-                        let lines = tab.content.chars().filter(|&c| c == '\n').count() + 1;
-                        ui.label(
-                            RichText::new(format!(
-                                "Ln {}, Col {}  ({lines} lines)",
-                                tab.cursor_line + 1,
-                                tab.cursor_col + 1
-                            ))
-                            .color(p.text),
-                        );
-                        ui.separator();
-                        ui.label(RichText::new("UTF-8").color(p.text_muted));
-                        let errs = tab
-                            .cache
-                            .diagnostics
-                            .iter()
-                            .filter(|d| d.severity == Severity::Error)
-                            .count();
-                        let warns = tab
-                            .cache
-                            .diagnostics
-                            .iter()
-                            .filter(|d| d.severity == Severity::Warning)
-                            .count();
-                        if errs > 0 || warns > 0 {
-                            ui.separator();
-                            ui.label(
-                                RichText::new(format!("{errs} errors · {warns} warnings"))
-                                    .color(p.text),
-                            );
-                        }
-                    } else {
-                        ui.label(RichText::new("No file open").color(p.text_muted));
-                    }
-
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if let Some(tab) = tabs.active_tab() {
-                            let lang = if tab.path.is_none() {
-                                "Plain Text".to_string()
-                            } else {
-                                tab.syntax.language().to_string()
-                            };
-                            ui.label(RichText::new(lang).color(p.text));
-                            ui.separator();
-                        }
-                        ui.separator();
-                        if let Some(g) = git.status_bar_suffix() {
-                            ui.label(RichText::new(g).color(p.text_muted));
-                            ui.separator();
-                        }
-                        ui.label(
-                            RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
-                                .color(p.text_muted),
-                        );
-                    });
-                });
-            });
-    }
-
     pub(super) fn show_tab_bar(tabs: &mut TabManager, ui: &mut egui::Ui, p: Palette) {
         if tabs.is_empty() {
             return;
@@ -168,12 +94,15 @@ impl EditorApp {
                         } else {
                             Color32::TRANSPARENT
                         };
-                        let tab_frame = egui::Frame::NONE.fill(fill).corner_radius(egui::CornerRadius {
-                            nw: 6,
-                            ne: 6,
-                            sw: 0,
-                            se: 0,
-                        });
+                        let tab_frame =
+                            egui::Frame::NONE
+                                .fill(fill)
+                                .corner_radius(egui::CornerRadius {
+                                    nw: 6,
+                                    ne: 6,
+                                    sw: 0,
+                                    se: 0,
+                                });
                         let response = tab_frame
                             .show(ui, |ui| {
                                 ui.add(egui::Button::new(RichText::new(&label).color(color)))

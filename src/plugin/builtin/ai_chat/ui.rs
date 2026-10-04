@@ -6,23 +6,35 @@ use eframe::egui::{self, Align, Color32, Layout, RichText, ScrollArea};
 
 use crate::core::style::Palette;
 
-use super::provider::Provider;
 use super::AiChatPlugin;
+use super::provider::Provider;
 
 const BUBBLE_MAX_FRAC: f32 = 0.85;
+const MESSAGE_FRAME_VERTICAL_MARGIN: f32 = 20.0;
+const COMPOSER_AND_SPACING_HEIGHT: f32 = 80.0;
 
 pub fn render(plugin: &mut AiChatPlugin, ui: &mut egui::Ui, p: &Palette) {
     provider_chips(plugin, ui, p);
     ui.add_space(6.0);
     settings_section(plugin, ui, p);
     plugin.save_fields();
+    if let Some((success, status)) = &plugin.connection_status {
+        let color = if plugin.pending() {
+            p.text_muted
+        } else if *success {
+            p.accent
+        } else {
+            p.diag_error
+        };
+        ui.label(RichText::new(status).color(color).size(11.5));
+        ui.add_space(4.0);
+    }
     ui.add_space(8.0);
     ui.separator();
     ui.add_space(6.0);
 
-    let input_h = 52.0;
-    let msg_h = (ui.available_height() - input_h).max(120.0);
-    message_surface(plugin, ui, p, msg_h - 16.0);
+    let message_height = (ui.available_height() - COMPOSER_AND_SPACING_HEIGHT).max(0.0);
+    message_surface(plugin, ui, p, message_height);
 
     ui.add_space(8.0);
     composer(plugin, ui, p);
@@ -48,24 +60,58 @@ fn settings_section(plugin: &mut AiChatPlugin, ui: &mut egui::Ui, p: &Palette) {
             ui.add_space(4.0);
             field_row(ui, p, "Endpoint", plugin.endpoint_mut(), false);
             field_row(ui, p, "Model", plugin.model_mut(), false);
-            field_row(ui, p, "API Key", plugin.api_key_mut(), true);
+            if field_row(ui, p, "API Key", plugin.api_key_mut(), true) {
+                plugin.mark_api_key_changed();
+            }
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(!plugin.pending(), egui::Button::new("Simpan API Key"))
+                    .on_hover_text("Simpan key terenkripsi di credential manager sistem")
+                    .clicked()
+                {
+                    plugin.save_api_key();
+                }
+                if ui
+                    .add_enabled(
+                        !plugin.pending(),
+                        egui::Button::new("Uji Koneksi"),
+                    )
+                    .on_hover_text("Mengirim permintaan singkat ke provider dan model ini")
+                    .clicked()
+                {
+                    plugin.test_connection();
+                }
+            });
+            let save_hint = if plugin.api_key_saved() {
+                "Key tersimpan aman di credential manager sistem."
+            } else if plugin.api_key_mut().is_empty() {
+                "Key belum diisi."
+            } else {
+                "Key belum disimpan; klik Simpan API Key agar tetap tersedia setelah aplikasi ditutup."
+            };
+            ui.label(RichText::new(save_hint).color(p.text_muted).size(11.0));
         });
 }
 
-fn field_row(ui: &mut egui::Ui, p: &Palette, label: &str, text: &mut String, secret: bool) {
+fn field_row(ui: &mut egui::Ui, p: &Palette, label: &str, text: &mut String, secret: bool) -> bool {
+    let mut changed = false;
     ui.horizontal(|ui| {
         ui.add_space(2.0);
         ui.label(RichText::new(label).color(p.text_muted).size(12.0));
-        ui.add(
-            egui::TextEdit::singleline(text)
-                .password(secret)
-                .desired_width(f32::INFINITY),
-        );
+        changed = ui
+            .add(
+                egui::TextEdit::singleline(text)
+                    .password(secret)
+                    .desired_width(f32::INFINITY),
+            )
+            .changed();
     });
     ui.add_space(4.0);
+    changed
 }
 
 fn message_surface(plugin: &AiChatPlugin, ui: &mut egui::Ui, p: &Palette, max_h: f32) {
+    let scroll_height = (max_h - MESSAGE_FRAME_VERTICAL_MARGIN).max(0.0);
     egui::Frame::NONE
         .fill(p.bg)
         .corner_radius(10.0)
@@ -73,7 +119,9 @@ fn message_surface(plugin: &AiChatPlugin, ui: &mut egui::Ui, p: &Palette, max_h:
         .show(ui, |ui| {
             ScrollArea::vertical()
                 .id_salt("ai_chat_messages")
-                .max_height(max_h)
+                .max_height(scroll_height)
+                .min_scrolled_height(scroll_height)
+                .auto_shrink([false, false])
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
                     if plugin.messages.is_empty() {
@@ -135,7 +183,8 @@ fn bubble(ui: &mut egui::Ui, text: &str, mine: bool, bg: Color32, fg: Color32) {
 }
 
 fn error_bubble(ui: &mut egui::Ui, text: &str, p: &Palette) {
-    let bg = Color32::from_rgba_unmultiplied(p.diag_error.r(), p.diag_error.g(), p.diag_error.b(), 24);
+    let bg =
+        Color32::from_rgba_unmultiplied(p.diag_error.r(), p.diag_error.g(), p.diag_error.b(), 24);
     bubble(ui, text, false, bg, p.diag_error);
 }
 

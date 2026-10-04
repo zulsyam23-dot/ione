@@ -36,7 +36,7 @@ impl EditorApp {
         }
     }
 
-    pub(super) fn branch(&self) -> String {
+    pub(crate) fn branch(&self) -> String {
         self.file_tree
             .root
             .as_ref()
@@ -163,6 +163,9 @@ impl EditorApp {
                     }
                     self.open_path(path);
                 }
+                AppCommand::GoToLine => {
+                    self.goto_line_input = Some(String::new());
+                }
                 AppCommand::QuickOpen => {
                     if self.quick_open.is_some() {
                         self.quick_open = None;
@@ -247,16 +250,20 @@ impl EditorApp {
                     self.search.toggle();
                 }
                 AppCommand::ToggleSidebar => {
-                    self.show_sidebar = !self.show_sidebar;
+                    crate::panels::PanelManager::toggle(self, crate::panels::Panel::Explorer, ctx);
                 }
                 AppCommand::ToggleTerminal => {
-                    self.terminal.toggle(ctx);
+                    crate::panels::PanelManager::toggle(self, crate::panels::Panel::Terminal, ctx);
                 }
                 AppCommand::ToggleAiChat => {
-                    self.plugins.toggle_window("ai-chat");
+                    crate::panels::PanelManager::toggle(self, crate::panels::Panel::AiChat, ctx);
                 }
                 AppCommand::ToggleGit => {
-                    self.git.toggle();
+                    crate::panels::PanelManager::toggle(
+                        self,
+                        crate::panels::Panel::SourceControl,
+                        ctx,
+                    );
                 }
                 AppCommand::RefreshFileTree => {
                     self.file_tree.refresh();
@@ -438,7 +445,10 @@ impl EditorApp {
         };
         let caption = (
             crate::workspace::loader::display_name(&p.path),
-            format!("{} — sedang dibaca…", crate::workspace::loader::human_size(p.bytes)),
+            format!(
+                "{} — sedang dibaca…",
+                crate::workspace::loader::human_size(p.bytes)
+            ),
         );
         match &mut self.loading {
             Some((ov, _)) if !ov.fullscreen => ov.caption = Some(caption),

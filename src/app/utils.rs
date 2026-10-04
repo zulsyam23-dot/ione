@@ -5,7 +5,7 @@ use eframe::egui::{self, Color32};
 use crate::core::style::{Palette, apply_style};
 use crate::core::theme::Theme;
 
-pub(super) const HANDLE: f32 = 6.0;
+pub(crate) const HANDLE: f32 = 6.0;
 
 /// User's Documents dir (creating it if missing), used as the default
 /// workspace so new files & folders always land somewhere predictable.
@@ -18,7 +18,7 @@ pub(super) fn documents_dir() -> Option<PathBuf> {
     Some(dir)
 }
 
-pub(super) fn load_logo(ctx: &egui::Context) -> egui::TextureHandle {
+pub(crate) fn load_logo(ctx: &egui::Context) -> egui::TextureHandle {
     let bytes = include_bytes!("..\\..\\assets\\icons\\app\\1770523897143.ico");
     let color = decode_logo(bytes).unwrap_or_else(fallback_logo);
     ctx.load_texture("ione_logo", color, egui::TextureOptions::LINEAR)
@@ -44,7 +44,7 @@ fn fallback_logo() -> egui::ColorImage {
     egui::ColorImage::new(size, pixels)
 }
 
-pub(super) fn drag_vertical_splitter(
+pub(crate) fn drag_vertical_splitter(
     ui: &mut egui::Ui,
     color: Color32,
     frac: &mut f32,

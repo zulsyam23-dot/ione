@@ -35,15 +35,30 @@ pub struct AiChatPlugin {
     keys: [String; 3],
     models: [String; 3],
     endpoints: [String; 3],
+    keys_loaded: [bool; 3],
+    keys_saved: [bool; 3],
     pub(crate) input: String,
     pub(crate) messages: Vec<ChatMessage>,
+    pub(crate) connection_status: Option<(bool, String)>,
     pending: bool,
-    rx: Option<Receiver<Result<String, String>>>,
+    pending_action: Option<RequestAction>,
+    rx: Option<Receiver<RequestResult>>,
+}
+
+#[derive(Clone, Copy)]
+enum RequestAction {
+    SendMessage,
+    TestConnection,
+}
+
+struct RequestResult {
+    action: RequestAction,
+    result: Result<String, String>,
 }
 
 impl AiChatPlugin {
     pub fn new() -> Self {
-        Self {
+        let mut plugin = Self {
             open: false,
             provider: Provider::OpenRouter,
             endpoint: Provider::OpenRouter.default_endpoint().to_string(),
@@ -60,15 +75,43 @@ impl AiChatPlugin {
                 Provider::OpenCodeZen.default_endpoint().to_string(),
                 Provider::Claude.default_endpoint().to_string(),
             ],
+            keys_loaded: [false; 3],
+            keys_saved: [false; 3],
             input: String::new(),
             messages: Vec::new(),
+            connection_status: None,
             pending: false,
+            pending_action: None,
             rx: None,
+        };
+        plugin.load_provider_credential(Provider::OpenRouter);
+        plugin.sync_fields();
+        plugin
+    }
+
+    fn load_provider_credential(&mut self, provider: Provider) {
+        let idx = provider.index();
+        match load_credential(provider) {
+            Ok(Some(key)) => {
+                self.keys[idx] = key;
+                self.keys_saved[idx] = true;
+                self.keys_loaded[idx] = true;
+            }
+            Ok(None) => self.keys_loaded[idx] = true,
+            Err(error) => {
+                self.connection_status = Some((
+                    false,
+                    format!(
+                        "Key {} tidak dapat dibaca dari penyimpanan aman: {error}",
+                        provider.name()
+                    ),
+                ));
+            }
         }
     }
 
     fn idx(&self) -> usize {
-        self.provider as usize
+        self.provider.index()
     }
 
     pub(crate) fn sync_fields(&mut self) {
@@ -90,8 +133,15 @@ impl AiChatPlugin {
     }
 
     pub(crate) fn set_provider(&mut self, prov: Provider) {
+        if self.provider == prov {
+            return;
+        }
         self.save_fields();
         self.provider = prov;
+        self.connection_status = None;
+        if !self.keys_loaded[self.idx()] {
+            self.load_provider_credential(prov);
+        }
         self.sync_fields();
     }
 
@@ -107,6 +157,44 @@ impl AiChatPlugin {
         &mut self.api_key
     }
 
+    pub(crate) fn mark_api_key_changed(&mut self) {
+        self.keys_saved[self.idx()] = false;
+        self.connection_status = None;
+    }
+
+    pub(crate) fn api_key_saved(&self) -> bool {
+        self.keys_saved[self.idx()]
+    }
+
+    pub(crate) fn save_api_key(&mut self) {
+        let idx = self.idx();
+        let result = store_credential(self.provider, &self.api_key);
+        match result {
+            Ok(()) => {
+                self.keys[idx] = self.api_key.trim().to_string();
+                self.keys_loaded[idx] = true;
+                self.keys_saved[idx] = !self.api_key.trim().is_empty();
+                self.connection_status = Some((
+                    true,
+                    if self.api_key.trim().is_empty() {
+                        "API key tersimpan telah dihapus dari penyimpanan aman.".into()
+                    } else {
+                        "API key tersimpan aman di credential manager sistem.".into()
+                    },
+                ));
+            }
+            Err(error) => {
+                self.keys_saved[idx] = false;
+                self.connection_status = Some((
+                    false,
+                    format!(
+                        "API key tidak dapat disimpan dengan aman: {error}. Key tetap tersedia hanya selama aplikasi berjalan."
+                    ),
+                ));
+            }
+        }
+    }
+
     pub(crate) fn clear(&mut self) {
         self.messages.clear();
     }
@@ -120,10 +208,11 @@ impl AiChatPlugin {
         if text.is_empty() || self.pending {
             return;
         }
-        if self.api_key.trim().is_empty() {
+        if let Err(error) = validate_settings(&self.endpoint, &self.model, &self.api_key) {
+            self.connection_status = Some((false, error.clone()));
             self.messages.push(ChatMessage {
                 role: "error",
-                text: "API key belum diisi.".into(),
+                text: error,
             });
             return;
         }
@@ -132,12 +221,6 @@ impl AiChatPlugin {
             text: text.clone(),
         });
         self.input.clear();
-        self.pending = true;
-
-        let provider = self.provider;
-        let endpoint = self.endpoint.clone();
-        let model = self.model.clone();
-        let api_key = self.api_key.clone();
         let messages: Vec<(String, String)> = self
             .messages
             .iter()
@@ -145,48 +228,183 @@ impl AiChatPlugin {
             .map(|m| (m.role.to_string(), m.text.clone()))
             .collect();
 
+        self.start_request(RequestAction::SendMessage, messages);
+    }
+
+    pub(crate) fn test_connection(&mut self) {
+        if self.pending {
+            return;
+        }
+        self.start_request(RequestAction::TestConnection, Vec::new());
+    }
+
+    fn start_request(&mut self, action: RequestAction, messages: Vec<(String, String)>) {
+        if let Err(error) = validate_settings(&self.endpoint, &self.model, &self.api_key) {
+            self.connection_status = Some((false, error.clone()));
+            if matches!(action, RequestAction::SendMessage) {
+                self.messages.push(ChatMessage {
+                    role: "error",
+                    text: error,
+                });
+            }
+            return;
+        }
+
+        self.pending = true;
+        self.pending_action = Some(action);
+        self.connection_status = Some((
+            false,
+            match action {
+                RequestAction::SendMessage => "Mengirim permintaan ke provider…".into(),
+                RequestAction::TestConnection => "Menguji koneksi dan kredensial…".into(),
+            },
+        ));
+
+        let provider = self.provider;
+        let endpoint = self.endpoint.trim().to_string();
+        let model = self.model.trim().to_string();
+        let api_key = self.api_key.trim().to_string();
         let (tx, rx) = mpsc::channel();
         self.rx = Some(rx);
-        thread::spawn(move || {
-            let result = match provider {
-                Provider::Claude => client::call_claude(&endpoint, &api_key, &model, &messages),
-                _ => client::call_openai_compatible(&endpoint, &api_key, &model, &messages),
+        let worker = thread::Builder::new()
+            .name("ione-ai-chat".into())
+            .spawn(move || {
+                let result = match action {
+                    RequestAction::SendMessage => {
+                        client::send_message(provider, &endpoint, &api_key, &model, &messages)
+                    }
+                    RequestAction::TestConnection => {
+                        client::test_connection(provider, &endpoint, &api_key, &model)
+                            .map(|()| "Connection verified".to_string())
+                    }
+                };
+                let _ = tx.send(RequestResult { action, result });
+            });
+        if let Err(error) = worker {
+            self.pending = false;
+            self.pending_action = None;
+            self.rx = None;
+            let message = format!("Tidak dapat memulai permintaan AI: {error}");
+            self.connection_status = Some((false, message.clone()));
+            if matches!(action, RequestAction::SendMessage) {
+                self.messages.push(ChatMessage {
+                    role: "error",
+                    text: message,
+                });
             };
-            let _ = tx.send(result);
-        });
+        }
     }
 
     fn poll(&mut self) -> bool {
         if let Some(rx) = &self.rx {
             match rx.try_recv() {
-                Ok(Ok(text)) => {
+                Ok(result) => self.finish_request(result),
+                Err(mpsc::TryRecvError::Empty) => return false,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.finish_request(RequestResult {
+                        action: self.pending_action.unwrap_or(RequestAction::SendMessage),
+                        result: Err("Proses permintaan AI berhenti tanpa mengirim hasil.".into()),
+                    });
+                }
+            }
+            self.pending = false;
+            self.pending_action = None;
+            self.rx = None;
+            return true;
+        }
+        false
+    }
+
+    fn finish_request(&mut self, result: RequestResult) {
+        match result.result {
+            Ok(text) => match result.action {
+                RequestAction::SendMessage => {
                     self.messages.push(ChatMessage {
                         role: "assistant",
                         text,
                     });
-                    self.pending = false;
-                    self.rx = None;
-                    return true;
+                    self.connection_status = Some((true, "Respons AI berhasil diterima.".into()));
                 }
-                Ok(Err(e)) => {
+                RequestAction::TestConnection => {
+                    self.connection_status = Some((
+                        true,
+                        format!(
+                            "Terhubung ke {} dengan model {}.",
+                            self.provider.name(),
+                            self.model
+                        ),
+                    ));
+                }
+            },
+            Err(error) => {
+                self.connection_status = Some((false, error.clone()));
+                if matches!(result.action, RequestAction::SendMessage) {
                     self.messages.push(ChatMessage {
                         role: "error",
-                        text: e,
+                        text: error,
                     });
-                    self.pending = false;
-                    self.rx = None;
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Empty) => return false,
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    self.pending = false;
-                    self.rx = None;
-                    return true;
                 }
             }
         }
-        false
     }
+}
+
+fn credential_entry(provider: Provider) -> Result<keyring::Entry, String> {
+    keyring::Entry::new("ione-ai-chat", provider.credential_id()).map_err(|error| error.to_string())
+}
+
+fn load_credential(provider: Provider) -> Result<Option<String>, String> {
+    match credential_entry(provider)?.get_password() {
+        Ok(key) => Ok(Some(key)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+fn store_credential(provider: Provider, api_key: &str) -> Result<(), String> {
+    let entry = credential_entry(provider)?;
+    if api_key.trim().is_empty() {
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(error) => Err(error.to_string()),
+        }
+    } else {
+        entry
+            .set_password(api_key.trim())
+            .map_err(|error| error.to_string())
+    }
+}
+
+fn validate_settings(endpoint: &str, model: &str, api_key: &str) -> Result<(), String> {
+    if api_key.trim().is_empty() {
+        return Err("API key belum diisi.".into());
+    }
+    if model.trim().is_empty() {
+        return Err("Nama model belum diisi.".into());
+    }
+    let endpoint = endpoint.trim();
+    let endpoint_lower = endpoint.to_ascii_lowercase();
+    let secure = endpoint_lower.starts_with("https://");
+    let local_http = endpoint_lower
+        .strip_prefix("http://")
+        .and_then(|authority_and_path| authority_and_path.split(['/', '?', '#']).next())
+        .is_some_and(is_loopback_authority);
+    if !(secure || local_http) {
+        return Err(
+            "Endpoint harus menggunakan HTTPS. HTTP hanya diizinkan untuk layanan lokal.".into(),
+        );
+    }
+    Ok(())
+}
+
+fn is_loopback_authority(authority: &str) -> bool {
+    ["localhost", "127.0.0.1", "[::1]"].iter().any(|host| {
+        authority == *host
+            || authority
+                .strip_prefix(host)
+                .and_then(|suffix| suffix.strip_prefix(':'))
+                .is_some_and(|port| !port.is_empty() && port.parse::<u16>().is_ok())
+    })
 }
 
 impl Default for AiChatPlugin {
@@ -210,9 +428,8 @@ impl Plugin for AiChatPlugin {
 
     fn on_ui(&mut self, egui_ctx: &egui::Context, _pctx: &mut PluginContext) {
         // Ctrl+Shift+A toggles the chat panel.
-        if egui_ctx.input(|i| {
-            i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::A)
-        }) {
+        if egui_ctx.input(|i| i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::A))
+        {
             self.open = !self.open;
         }
 
@@ -232,5 +449,38 @@ impl Plugin for AiChatPlugin {
 
     fn on_dock(&mut self, ui: &mut egui::Ui, pctx: &mut PluginContext) {
         ui::render(self, ui, &pctx.palette);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_settings;
+
+    #[test]
+    fn valid_https_provider_settings_are_accepted() {
+        assert!(validate_settings("https://api.example.com/chat", "model", "key").is_ok());
+    }
+
+    #[test]
+    fn local_http_endpoints_are_supported_for_local_models() {
+        assert!(validate_settings("http://localhost:1234/v1", "model", "key").is_ok());
+        assert!(validate_settings("http://127.0.0.1:1234/v1", "model", "key").is_ok());
+        assert!(validate_settings("http://[::1]:1234/v1", "model", "key").is_ok());
+    }
+
+    #[test]
+    fn non_local_http_endpoints_are_rejected_before_sending_secrets() {
+        assert!(
+            validate_settings("http://example.com/v1", "model", "key")
+                .expect_err("remote HTTP is insecure")
+                .contains("HTTPS")
+        );
+        assert!(validate_settings("http://localhost.attacker.test/v1", "model", "key").is_err());
+    }
+
+    #[test]
+    fn missing_configuration_is_reported_before_a_request_starts() {
+        assert!(validate_settings("https://api.example.com", "model", "").is_err());
+        assert!(validate_settings("https://api.example.com", "", "key").is_err());
     }
 }

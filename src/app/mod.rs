@@ -3,27 +3,26 @@ use std::time::{Duration, Instant};
 
 use eframe::egui::{self};
 
-use crate::workspace::file_tree::FileTree;
-use crate::git::GitPanel;
-use crate::editor::guides::EditorOverlay;
-use crate::core::icons::Icons;
-use crate::workspace::loader::FileLoader;
 use crate::app::loading::LoadingOverlay;
+use crate::core::icons::Icons;
+use crate::core::style::Palette;
+use crate::core::theme::Theme;
+use crate::editor::guides::EditorOverlay;
+use crate::git::GitPanel;
+use crate::terminal::TerminalPanel;
+use crate::workspace::file_tree::FileTree;
+use crate::workspace::loader::FileLoader;
 use crate::workspace::outline::OutlinePanel;
 use crate::workspace::search::SearchPanel;
-use crate::core::style::Palette;
 use crate::workspace::tabs::TabManager;
-use crate::terminal::TerminalPanel;
-use crate::core::theme::Theme;
 
 pub mod actions;
-mod frame;
 pub mod chrome;
-pub mod explorer_bar;
-pub mod popups;
-pub mod utils;
+mod frame;
 pub mod loading;
 pub mod menu;
+pub mod popups;
+pub mod utils;
 
 /// Minimum time the loading splash stays up once its load has landed, so a
 /// quick open still shows the GIF instead of flashing it for a couple of frames.
@@ -40,6 +39,7 @@ pub enum AppCommand {
     SetRoot(PathBuf),
     OpenRecent(PathBuf),
     QuickOpen,
+    GoToLine,
     RenamePath(PathBuf),
     DeletePath(PathBuf),
     CopyPath(PathBuf),
@@ -78,15 +78,16 @@ pub struct EditorApp {
     pub git: GitPanel,
     pub theme: Theme,
     pub icons: Icons,
-    pub show_sidebar: bool,
+    pub panels: crate::panels::PanelManager,
     pub show_about: bool,
     pub bracket_guides: bool,
     pub colorize_brackets: bool,
     pub palette: Palette,
     pub last_auto_save: Instant,
-    pub outline_frac: f32,
     pub renaming: Option<RenameState>,
     pub naming: Option<NamingState>,
+    /// In-progress "Go to Line" dialog: the typed line number.
+    pub goto_line_input: Option<String>,
     pub logo: Option<egui::TextureHandle>,
     /// `(overlay, when it was scheduled)`. `fullscreen` during startup, an
     /// editor-area splash while a heavy file is being read on a worker thread.
@@ -142,14 +143,14 @@ impl Default for EditorApp {
             git: GitPanel::new(),
             theme: Theme::default(),
             icons: Icons::new(),
-            show_sidebar: true,
+            panels: crate::panels::PanelManager::default(),
             show_about: false,
             bracket_guides: true,
             colorize_brackets: true,
             palette: Palette::dark(),
             last_auto_save: Instant::now(),
-            outline_frac: 0.4,
             renaming: None,
+            goto_line_input: None,
             naming: None,
             logo: None,
             loading: None,
@@ -177,7 +178,10 @@ impl EditorApp {
             font: loaded.font.clone(),
         };
         if let Some(t) = &loaded.theme {
-            if let Some(theme) = crate::core::theme::Theme::ALL.iter().find(|x| x.name() == t) {
+            if let Some(theme) = crate::core::theme::Theme::ALL
+                .iter()
+                .find(|x| x.name() == t)
+            {
                 app.theme = *theme;
             }
         }

@@ -43,6 +43,7 @@
 | **Bracket guides** | Panduan pasangan kurung + rainbow brackets (bisa dimatikan via View → Editor Guides) |
 | **Outline panel** | Navigasi struktur file aktif |
 | **Git Panel** | Status, stage/unstage, commit, dan diff berwarna per-file |
+| **AI Chat** | Chat dengan OpenRouter, OpenCode Zen, atau Claude; kredensial dapat disimpan di penyimpanan aman sistem |
 | **Tema Dark/Light** | Hitam murni & putih, sudut tajam; GitHub Light masih **beta** (ada konfirmasi saat memilih) |
 | **Ganti font editor** | 5 font coding gratis: JetBrains Mono, Fira Code, dsb. |
 | **Splash screen** | Animasi startup + overlay sesaat saat membuka file besar |
@@ -83,6 +84,7 @@ Dependensi utama (di `Cargo.toml`):
 | `rfd` | 0.15 | Dialog file/folder |
 | `opener` | 0.8 | Membuka hyperlink/system default |
 | `image` | 0.25 | Pemuatan GIF/ICO |
+| `keyring` | 3.6 | Penyimpanan API key di credential manager sistem |
 
 ---
 
@@ -135,6 +137,15 @@ cargo run
 > **Terminal multi-session:** klik kiri = pindah sesi, klik tengah / klik kanan → Close = tutup sesi.
 
 > **Git Panel:** klik baris = lihat diff, tombol `+`/`−` = stage/unstage satu file, klik-kanan = Open File / Copy Path / Stage · Unstage / Discard Changes, `Ctrl+Enter` = commit pada kotak pesan.
+
+### Menghubungkan AI Chat
+
+1. Buka AI Chat dari ikon chat di bar atas, lalu pilih provider.
+2. Buka **Pengaturan**, isi API key dan pastikan endpoint serta model sesuai akun provider.
+3. Klik **Simpan API Key** untuk menyimpan key pada credential manager sistem; key tidak ditulis ke file konfigurasi biasa.
+4. Klik **Uji Koneksi** untuk mengirim permintaan kecil dan memeriksa endpoint, model, dan kredensial. Setelah berhasil, kirim pesan dari kotak chat.
+
+Uji koneksi mengirim prompt singkat ke model dan mungkin menggunakan sedikit kuota provider. Permintaan dibatasi hingga 45 detik. Pesan kesalahan ditampilkan pada panel tanpa menampilkan API key. Endpoint jaringan harus menggunakan HTTPS; HTTP hanya diizinkan untuk layanan lokal di `localhost`/loopback.
 
 ---
 

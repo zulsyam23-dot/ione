@@ -11,10 +11,9 @@
 
 use std::time::{Duration, Instant};
 
-use eframe::egui::{self, Align, Layout};
+use eframe::egui;
 
-use crate::core::icons::Icon;
-use crate::core::style::{Palette, frame, header_label};
+use crate::core::style::Palette;
 
 use super::{AppCommand, EditorApp, menu, utils};
 
@@ -33,7 +32,7 @@ impl EditorApp {
         false
     }
 
-    fn plugin_context(&self) -> crate::plugin::PluginContext {
+    pub(crate) fn plugin_context(&self) -> crate::plugin::PluginContext {
         crate::plugin::PluginContext {
             palette: self.palette,
             bracket_guides: self.bracket_guides,
@@ -77,7 +76,7 @@ impl EditorApp {
             .tabs
             .get(self.tabs.active)
             .and_then(|t| t.path.clone());
-        if !(self.show_sidebar || self.git.visible || editing.is_some()) {
+        if !(self.panels.explorer_visible || self.git.visible || editing.is_some()) {
             return;
         }
         let busy = self.git.busy();
@@ -109,131 +108,6 @@ impl EditorApp {
         if busy {
             ctx.request_repaint_after(Duration::from_millis(120));
         }
-    }
-
-    fn show_sidebar_panel(
-        &mut self,
-        root_ui: &mut egui::Ui,
-        commands: &mut Vec<AppCommand>,
-    ) -> Option<egui::Rect> {
-        if !self.show_sidebar {
-            return None;
-        }
-        Some(
-            egui::Panel::left("sidebar")
-                .exact_size(230.0)
-                .show_separator_line(false)
-                .frame(frame(self.palette.panel, self.palette.border, 0, 8))
-                .show(root_ui, |ui| {
-                    self.show_sidebar(commands, ui);
-                })
-                .response
-                .rect,
-        )
-    }
-
-    fn show_terminal_panel(
-        &mut self,
-        root_ui: &mut egui::Ui,
-        ctx: &egui::Context,
-        commands: &mut Vec<AppCommand>,
-    ) {
-        // Keep the terminal's spawn dir in sync with the workspace root so
-        // new shells open inside the opened folder.
-        self.terminal.cwd = self.file_tree.root.clone();
-        if !self.terminal.visible {
-            return;
-        }
-        egui::Panel::bottom("terminal_panel")
-            .resizable(true)
-            .default_size(220.0)
-            .min_size(80.0)
-            .frame(frame(self.palette.panel, self.palette.border, 0, 0))
-            .show(root_ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.add_space(8.0);
-                    ui.label(header_label(ui, "Terminal"));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.add_space(8.0);
-                        if ui.small_button("×").on_hover_text("Close").clicked() {
-                            commands.push(AppCommand::ToggleTerminal);
-                        }
-                        if ui
-                            .small_button("Copy")
-                            .on_hover_text("Copy selection")
-                            .clicked()
-                        {
-                            if let Some(text) = self.terminal.copy_selection() {
-                                ctx.copy_text(text);
-                            }
-                        }
-                    });
-                });
-                self.terminal.show(ui, &self.palette, ctx);
-            });
-    }
-
-    fn show_git_panel(&mut self, root_ui: &mut egui::Ui, commands: &mut Vec<AppCommand>) {
-        if !self.git.visible {
-            return;
-        }
-        let rect = egui::Panel::right("git_panel")
-            .exact_size(280.0)
-            .show_separator_line(false)
-            .frame(frame(self.palette.panel, self.palette.border, 0, 8))
-            .show(root_ui, |ui| {
-                self.git.show(
-                    ui,
-                    &mut self.icons,
-                    &self.palette,
-                    self.file_tree.root.as_ref(),
-                    commands,
-                );
-            })
-            .response
-            .rect;
-        // Persistent divider at the panel's left edge, painted last so no
-        // panel content (rows, scrollbars) can ever cover it.
-        root_ui.painter().vline(
-            rect.left() + 0.5,
-            rect.y_range(),
-            egui::Stroke::new(1.0, self.palette.border),
-        );
-    }
-
-    fn show_plugin_panel(&mut self, root_ui: &mut egui::Ui, commands: &mut Vec<AppCommand>) {
-        if !self.plugins.any_dock_open() {
-            return;
-        }
-        let rect = egui::Panel::right("plugin_dock")
-            .exact_size(420.0)
-            .show_separator_line(false)
-            .frame(frame(self.palette.panel, self.palette.border, 0, 8))
-            .show(root_ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(header_label(ui, "AI Chat"));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.add_space(4.0);
-                        if self
-                            .icons
-                            .image_button(ui, Icon::Close, 16.0, "Close")
-                            .clicked()
-                        {
-                            commands.push(AppCommand::ToggleAiChat);
-                        }
-                    });
-                });
-                ui.add_space(6.0);
-                let mut pctx = self.plugin_context();
-                self.plugins.on_dock(ui, &mut pctx);
-            })
-            .response
-            .rect;
-        root_ui.painter().vline(
-            rect.left() + 0.5,
-            rect.y_range(),
-            egui::Stroke::new(1.0, self.palette.border),
-        );
     }
 
     /// The central editor area. Returns `true` on frames where the editor
@@ -273,10 +147,10 @@ impl EditorApp {
                 // While the veil is up and the worker is still reading, the
                 // editor body is pure cost: it is covered, and laying out a
                 // large file every frame is what made the spinner stutter.
-                let hidden_behind_veil = matches!(&self.loading, Some((ov, _)) if !ov.fullscreen)
-                    && self.loader.busy();
+                let hidden_behind_veil =
+                    matches!(&self.loading, Some((ov, _)) if !ov.fullscreen) && self.loader.busy();
                 if self.tabs.is_empty() {
-                    self.show_empty_state(ui, ctx);
+                    crate::panels::PanelManager::show_empty_state(self, ui, ctx);
                     editor_drawn = true;
                 } else if hidden_behind_veil {
                     // Nothing to do: the next frame paints it.
@@ -329,13 +203,10 @@ impl eframe::App for EditorApp {
         self.pump_git(&ctx);
 
         self.show_title_bar(root_ui, &mut commands);
-        let sidebar_rect = self.show_sidebar_panel(root_ui, &mut commands);
-        // Bottom status bar. Added FIRST so it sits innermost (against the
-        // screen bottom); the terminal (added after) stacks above it.
-        Self::show_status_bar(root_ui, &self.tabs, &self.branch(), &self.git);
-        self.show_terminal_panel(root_ui, &ctx, &mut commands);
-        self.show_git_panel(root_ui, &mut commands);
-        self.show_plugin_panel(root_ui, &mut commands);
+        // The panel manager owns the layout order and delegates each panel to
+        // its isolated renderer module.
+        let sidebar_rect =
+            crate::panels::PanelManager::show_all(self, root_ui, &ctx, &mut commands);
         let editor_drawn = self.show_editor_area(root_ui, &ctx, &mut commands);
 
         // Retire the editor splash only on a frame that actually painted the
@@ -351,6 +222,7 @@ impl eframe::App for EditorApp {
         self.show_new_file_window(&ctx);
         self.show_theme_confirm(&ctx, &mut commands);
         self.show_quick_open(&ctx, &mut commands);
+        self.show_goto_line_window(&ctx);
 
         // Persistent divider at the explorer's right edge, painted last so no
         // panel content (tree rows, scrollbars) can ever cover it.
