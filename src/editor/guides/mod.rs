@@ -271,8 +271,12 @@ pub fn draw_editor_overlays_with_pairs(
         })
     });
 
-    let painter = ui.painter();
     if overlay.bracket_guides {
+        // Paint guides behind text so glyphs remain readable. TextEdit renders
+        // text on the UI's Middle layer; drawing on Background with the same
+        // layer id and clip keeps guides aligned but underneath characters.
+        let bg_layer = egui::LayerId::new(egui::Order::Background, ui.layer_id().id);
+        let painter = ui.ctx().layer_painter(bg_layer).with_clip_rect(clip_rect);
         // First (outermost, depth-0) guide keeps the full width; every deeper
         // level draws thinner so shrinking blocks don't stack up into a solid
         // bar. Static and active highlight share the same width per pair.

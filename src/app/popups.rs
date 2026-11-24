@@ -270,6 +270,54 @@ impl EditorApp {
             });
     }
 
+    pub(super) fn show_goto_line_window(&mut self, ctx: &egui::Context) {
+        let Some(mut input) = self.goto_line_input.take() else {
+            return;
+        };
+        let mut submitted = false;
+        let mut cancelled = false;
+        egui::Window::new("Go to Line")
+            .collapsible(false)
+            .resizable(false)
+            .default_width(260.0)
+            .anchor(egui::Align2::CENTER_TOP, [0.0, 60.0])
+            .show(ctx, |ui| {
+                ui.label("Line number:");
+                let edit = ui.text_edit_singleline(&mut input);
+                if !edit.has_focus() {
+                    edit.request_focus();
+                }
+                let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                ui.horizontal(|ui| {
+                    if ui.button("Go").clicked() {
+                        submitted = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancelled = true;
+                    }
+                });
+                if enter {
+                    submitted = true;
+                }
+                if esc {
+                    cancelled = true;
+                }
+            });
+        if submitted {
+            if let Ok(line) = input.trim().parse::<usize>() {
+                if let Some(tab) = self.tabs.active_tab_mut() {
+                    tab.goto_line = Some(line.saturating_sub(1));
+                }
+            }
+            self.goto_line_input = None;
+        } else if cancelled {
+            self.goto_line_input = None;
+        } else {
+            self.goto_line_input = Some(input);
+        }
+    }
+
     pub(super) fn show_theme_confirm(
         &mut self,
         ctx: &egui::Context,

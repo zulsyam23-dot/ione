@@ -7,7 +7,7 @@ use crate::git::GitPanel;
 use crate::workspace::tabs::TabManager;
 
 pub(super) fn show(root_ui: &mut egui::Ui, app: &EditorApp, commands: &mut Vec<AppCommand>) {
-    show_status_bar(root_ui, &app.tabs, &app.branch(), &app.git, commands);
+    show_status_bar(root_ui, &app.tabs, &app.branch(), &app.git, commands, app.palette);
 }
 
 fn show_status_bar(
@@ -16,8 +16,8 @@ fn show_status_bar(
     branch: &str,
     git: &GitPanel,
     commands: &mut Vec<AppCommand>,
+    p: Palette,
 ) {
-    let p = Palette::dark();
     egui::Panel::bottom("status_bar")
         .frame(frame(p.bg, p.border, 0, 5))
         .show(root_ui, |ui| {
